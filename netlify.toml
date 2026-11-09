@@ -1,0 +1,15 @@
+# Сборки нет: сайт статический. Перед выкладкой Netlify прогоняет тесты,
+# и если что-то сломано, старая версия остаётся на месте.
+[build]
+  publish = "."
+  command = "npm test"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Content-Security-Policy = "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
