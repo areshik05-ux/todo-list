@@ -522,16 +522,20 @@ function startEditing(li) {
   field?.setSelectionRange(field.value.length, field.value.length);
 }
 
+// Список с правкой из открытого редактора; тот же массив, если ничего не поменяли.
 function editedTodos() {
   const editor = $('.editor', listWrap);
   if (!editingId || !editor) return todos;
   const f = editor.elements;
-  return updateTodo(todos, editingId, {
+  const next = updateTodo(todos, editingId, {
     title: f.title.value,
     due: f.due.value || null,
     priority: Number(f.priority.value),
     tags: splitTags(f.tags.value),
   });
+  const before = JSON.stringify(todos.find((x) => x.id === editingId));
+  const after = JSON.stringify(next.find((x) => x.id === editingId));
+  return before === after ? todos : next;
 }
 
 function finishEditing(save, focus = { id: editingId, selector: '.todo-edit', index: 0 }) {
@@ -544,9 +548,10 @@ function finishEditing(save, focus = { id: editingId, selector: '.todo-edit', in
 
 // Человек ушёл из редактора к другому действию (клик по чужой галочке, метке,
 // разделу): сначала молча сохраняем правку, потом выполняется само действие.
-// Перерисовываем не сразу, а после клика: иначе кнопка под курсором
-// исчезнет между нажатием и отпусканием и клик потеряется.
-function flushEditor(afterPointer = false) {
+// Вызывается в начале клика (фаза захвата), до обработчика самой кнопки,
+// поэтому кнопка ещё на месте и клик срабатывает. Прокрутка пальцем клика
+// не даёт, и редактор остаётся открытым.
+function flushEditor() {
   if (!editingId) return;
   const next = editedTodos();
   editingId = null;
@@ -555,11 +560,9 @@ function flushEditor(afterPointer = false) {
     todos = next;
     storageWarning.hidden = saveTodos(todos);
   }
-  const refresh = () => setTimeout(() => {
+  setTimeout(() => {
     if (!editingId && $('.editor', listWrap)) render();
   }, 0);
-  if (afterPointer) document.addEventListener('pointerup', refresh, { once: true, capture: true });
-  else refresh();
 }
 
 listWrap.addEventListener('change', (e) => {
@@ -595,8 +598,9 @@ listWrap.addEventListener('keydown', (e) => {
 });
 
 // Клик или Tab мимо редактора сохраняет правку, как в v1 при потере фокуса.
-document.addEventListener('pointerdown', (e) => {
-  if (editingId && !e.target.closest?.('.editor')) flushEditor(true);
+// Клик по «Вернуть» в сообщении сам закрывает редактор (см. applyUndo).
+document.addEventListener('click', (e) => {
+  if (editingId && !e.target.closest?.('.editor, .toast')) flushEditor();
 }, true);
 
 listWrap.addEventListener('focusout', (e) => {
@@ -611,6 +615,7 @@ listWrap.addEventListener('focusout', (e) => {
 listWrap.addEventListener('pointerdown', (e) => {
   const handle = e.target.closest('.handle');
   if (!handle || !dragEnabled || e.button !== 0) return;
+  flushEditor();
   const li = handle.closest('.todo');
   const ul = li.parentElement;
   const startIndex = [...ul.children].indexOf(li);
@@ -707,6 +712,7 @@ function dropUndo() {
 function applyUndo() {
   if (!undo?.snapshot) return;
   const { snapshot, focus } = undo;
+  editingId = null;
   for (const timer of lingering.values()) clearTimeout(timer);
   lingering.clear();
   commit(snapshot, { focus: focus ?? undefined });

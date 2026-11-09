@@ -210,6 +210,8 @@ kbd {
 }
 
 .brand-date {
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-2);
   font-size: 13px;
@@ -1429,5 +1431,12 @@ h1 {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     transition-delay: 0s !important;
+  }
+}
+
+/* На узком экране подсказки клавиш только отнимают место у поля */
+@media (max-width: 639px) {
+  .key-hint {
+    display: none;
   }
 }
