@@ -2,7 +2,7 @@
 
 Тестовое задание для The Digital: простой To-Do List на HTML, CSS и JavaScript без фреймворков и сборки.
 
-**Сайт:** _ссылка появится после выкладки на Netlify_
+**Сайт:** https://arina-todo-list.netlify.app
 
 ## Что умеет
 
