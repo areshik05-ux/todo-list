@@ -3,74 +3,251 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Список задач</title>
-  <meta name="description" content="Простой список задач: добавить, отметить, удалить. Всё хранится в браузере.">
-  <meta name="theme-color" content="#f4f5f2" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#16181a" media="(prefers-color-scheme: dark)">
+  <title>Задачи</title>
+  <meta name="description" content="Список задач со сроками, приоритетами и метками. Всё хранится в браузере.">
+  <meta name="theme-color" content="#f3f5f6">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="css/style.css">
+  <script src="js/boot.js"></script>
   <script type="module" src="js/app.js"></script>
 </head>
 <body>
-  <main class="page">
-    <header class="head">
-      <h1>Задачи</h1>
-      <p class="today" id="today"></p>
-    </header>
+  <svg class="sprite" aria-hidden="true">
+    <symbol id="i-all" viewBox="0 0 20 20"><path d="M3 11.5 5 4.5h10l2 7m-14 0V15.5h14V11.5m-14 0h4l1 2h4l1-2h4"/></symbol>
+    <symbol id="i-today" viewBox="0 0 20 20"><rect x="3" y="4.5" width="14" height="12" rx="2"/><path d="M3 8.5h14M7 3v3M13 3v3"/><circle cx="10" cy="12.5" r="1.4" class="fill"/></symbol>
+    <symbol id="i-upcoming" viewBox="0 0 20 20"><rect x="3" y="4.5" width="14" height="12" rx="2"/><path d="M3 8.5h14M7 3v3M13 3v3M7 12h2m2 0h2M7 14.5h2"/></symbol>
+    <symbol id="i-done" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7"/><path d="m7 10.2 2 2 4-4.2"/></symbol>
+    <symbol id="i-search" viewBox="0 0 20 20"><circle cx="9" cy="9" r="5"/><path d="m13 13 3.5 3.5"/></symbol>
+    <symbol id="i-x" viewBox="0 0 20 20"><path d="m6 6 8 8m0-8-8 8"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 20 20"><path d="M10 4.5v11M4.5 10h11"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 20 20"><path d="m12.5 4.5 3 3L8 15H5v-3l7.5-7.5z"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 20 20"><path d="M4.5 6h11M8 6V4.5h4V6m-6.5 0 .7 9.5h7.6l.7-9.5M8.5 9v4m3-4v4"/></symbol>
+    <symbol id="i-grip" viewBox="0 0 20 20"><circle cx="7.5" cy="5" r="1.2" class="fill"/><circle cx="12.5" cy="5" r="1.2" class="fill"/><circle cx="7.5" cy="10" r="1.2" class="fill"/><circle cx="12.5" cy="10" r="1.2" class="fill"/><circle cx="7.5" cy="15" r="1.2" class="fill"/><circle cx="12.5" cy="15" r="1.2" class="fill"/></symbol>
+    <symbol id="i-flag" viewBox="0 0 20 20"><path d="M5 17V3.5m0 0h9l-2 3.5 2 3.5H5" class="fill"/></symbol>
+    <symbol id="i-calendar" viewBox="0 0 20 20"><rect x="3" y="4.5" width="14" height="12" rx="2"/><path d="M3 8.5h14M7 3v3M13 3v3"/></symbol>
+    <symbol id="i-hash" viewBox="0 0 20 20"><path d="M8 3.5 6.5 16.5m7-13L12 16.5M4 7.5h12.5M3.5 12.5H16"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 20 20"><path d="M15.5 12.5A6.5 6.5 0 0 1 7.5 4.5a6.5 6.5 0 1 0 8 8z"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 20 20"><circle cx="10" cy="10" r="3.2"/><path d="M10 2.5v2m0 11v2m7.5-7.5h-2m-11 0h-2m12.8-5.3-1.4 1.4m-7.8 7.8-1.4 1.4m10.6 0-1.4-1.4M5.6 5.6 4.2 4.2"/></symbol>
+    <symbol id="i-keyboard" viewBox="0 0 20 20"><rect x="2.5" y="5" width="15" height="10" rx="2"/><path d="M6 8.5h.5m3 0h1m3 0h.5M6 11.5h8"/></symbol>
+    <symbol id="i-file" viewBox="0 0 20 20"><path d="M5 3.5h6.5l3.5 3.5v9.5H5zM11.5 3.5V7H15"/></symbol>
+    <symbol id="i-download" viewBox="0 0 20 20"><path d="M10 3.5v9m-3.5-3.5L10 12.5 13.5 9M4 16h12"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 20 20"><path d="M10 12.5v-9M6.5 7 10 3.5 13.5 7M4 16h12"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 20 20"><path d="m6 8 4 4 4-4"/></symbol>
+  </svg>
 
-    <form class="add" id="add-form" autocomplete="off">
-      <label class="visually-hidden" for="new-todo">Новая задача</label>
-      <input id="new-todo" name="title" type="text" maxlength="200"
-             placeholder="Что нужно сделать?" enterkeyhint="done" required>
-      <button type="submit">Добавить</button>
-    </form>
+  <div class="app">
+    <aside class="side">
+      <div class="brand">
+        <p class="brand-name" data-i18n="app.name">Задачи</p>
+        <p class="brand-date" id="today-date"></p>
+      </div>
 
-    <section class="board" id="board" hidden>
-      <div class="toolbar">
-        <div class="filters" role="group" aria-label="Показать">
-          <button type="button" data-filter="all" aria-pressed="true">Все <span data-count="all"></span></button>
-          <button type="button" data-filter="active" aria-pressed="false">Активные <span data-count="active"></span></button>
-          <button type="button" data-filter="done" aria-pressed="false">Готово <span data-count="done"></span></button>
+      <nav class="views" id="views" data-i18n-attr="aria-label:nav.label" aria-label="Разделы">
+        <a class="view" href="#/all" data-view="all">
+          <svg class="icon" aria-hidden="true"><use href="#i-all"/></svg>
+          <span class="view-label" data-i18n="view.all">Все</span>
+          <span class="view-count" data-count="all"></span>
+        </a>
+        <a class="view" href="#/today" data-view="today">
+          <svg class="icon" aria-hidden="true"><use href="#i-today"/></svg>
+          <span class="view-label" data-i18n="view.today">Сегодня</span>
+          <span class="view-count" data-count="today"></span>
+        </a>
+        <a class="view" href="#/upcoming" data-view="upcoming">
+          <svg class="icon" aria-hidden="true"><use href="#i-upcoming"/></svg>
+          <span class="view-label" data-i18n="view.upcoming">Предстоящие</span>
+          <span class="view-count" data-count="upcoming"></span>
+        </a>
+        <a class="view" href="#/done" data-view="done">
+          <svg class="icon" aria-hidden="true"><use href="#i-done"/></svg>
+          <span class="view-label" data-i18n="view.done">Готово</span>
+          <span class="view-count" data-count="done"></span>
+        </a>
+      </nav>
+
+      <div class="progress-block" id="progress-block" hidden>
+        <p class="progress-text" id="progress-text"></p>
+        <progress id="progress" max="1" value="0" aria-hidden="true"></progress>
+      </div>
+
+      <div class="side-tools">
+        <div class="lang" role="group" data-i18n-attr="aria-label:lang.label" aria-label="Язык">
+          <button type="button" data-lang="ru" aria-pressed="true" lang="ru" title="Русский">RU</button>
+          <button type="button" data-lang="en" aria-pressed="false" lang="en" title="English">EN</button>
         </div>
-        <p class="left" id="left" aria-live="polite"></p>
+        <button type="button" class="icon-btn" id="theme-btn">
+          <svg class="icon icon-moon" aria-hidden="true"><use href="#i-moon"/></svg>
+          <svg class="icon icon-sun" aria-hidden="true"><use href="#i-sun"/></svg>
+        </button>
+        <button type="button" class="icon-btn" id="help-btn">
+          <svg class="icon" aria-hidden="true"><use href="#i-keyboard"/></svg>
+        </button>
+        <div class="data">
+          <button type="button" class="icon-btn" id="data-btn" aria-expanded="false" aria-controls="data-panel">
+            <svg class="icon" aria-hidden="true"><use href="#i-file"/></svg>
+          </button>
+          <div class="data-panel" id="data-panel" hidden>
+            <button type="button" class="menu-item" id="export-btn">
+              <svg class="icon" aria-hidden="true"><use href="#i-download"/></svg>
+              <span data-i18n="menu.export">Скачать задачи (JSON)</span>
+            </button>
+            <button type="button" class="menu-item" id="import-btn">
+              <svg class="icon" aria-hidden="true"><use href="#i-upload"/></svg>
+              <span data-i18n="menu.import">Загрузить из файла</span>
+            </button>
+            <input type="file" id="import-file" accept=".json,application/json" hidden>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="main-head">
+        <div class="main-title">
+          <h1 id="view-title">Все</h1>
+          <p class="view-sub" id="view-sub"></p>
+        </div>
+        <div class="main-tools">
+          <div class="search">
+            <svg class="icon" aria-hidden="true"><use href="#i-search"/></svg>
+            <label class="visually-hidden" for="search" data-i18n="search.label">Поиск по задачам</label>
+            <input id="search" type="search" maxlength="100" autocomplete="off" spellcheck="false"
+                   data-i18n-attr="placeholder:search.placeholder" placeholder="Поиск">
+            <kbd class="key-hint" aria-hidden="true">/</kbd>
+            <button type="button" class="search-clear" id="search-clear" hidden>
+              <svg class="icon" aria-hidden="true"><use href="#i-x"/></svg>
+            </button>
+          </div>
+          <div class="select">
+            <label class="visually-hidden" for="sort" data-i18n="sort.label">Порядок</label>
+            <select id="sort">
+              <option value="manual" data-i18n="sort.manual">Свой порядок</option>
+              <option value="due" data-i18n="sort.due">По сроку</option>
+              <option value="priority" data-i18n="sort.priority">По приоритету</option>
+            </select>
+            <svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg>
+          </div>
+        </div>
+      </header>
+
+      <form class="composer" id="add-form" autocomplete="off">
+        <svg class="icon composer-icon" aria-hidden="true"><use href="#i-plus"/></svg>
+        <label class="visually-hidden" for="new-todo" data-i18n="add.label">Новая задача</label>
+        <input id="new-todo" name="title" type="text" maxlength="300" enterkeyhint="done"
+               aria-describedby="add-hint" data-i18n-attr="placeholder:add.placeholder"
+               placeholder="Например: Позвонить в банк завтра !1 #дела">
+        <kbd class="key-hint" aria-hidden="true">N</kbd>
+        <button type="submit" class="btn-primary" data-i18n="add.submit">Добавить</button>
+      </form>
+      <div class="chips" id="chips" aria-live="polite"></div>
+      <p class="hint" id="add-hint"></p>
+
+      <p class="warning" id="storage-warning" role="alert" data-i18n="storage.warning" hidden></p>
+      <p class="visually-hidden" id="live" aria-live="polite"></p>
+
+      <div class="list-wrap" id="list"></div>
+
+      <div class="empty" id="empty" hidden>
+        <svg class="icon empty-icon" aria-hidden="true"><use href="#i-done"/></svg>
+        <p id="empty-text"></p>
       </div>
 
-      <ul class="list" id="list"></ul>
-      <p class="list-empty" id="list-empty" hidden></p>
-
-      <div class="board-foot">
-        <button type="button" class="link-btn" id="clear-done">Убрать выполненные</button>
-      </div>
-    </section>
-
-    <p class="empty" id="empty" hidden>Список пуст. Запишите первое дело, а остальное подтянется.</p>
-    <p class="warning" id="storage-warning" hidden>
-      Браузер не даёт сохранить задачи. После обновления страницы список пропадёт.
-    </p>
-  </main>
+      <footer class="main-foot">
+        <button type="button" class="link-btn" id="clear-done" data-i18n="clearDone" hidden>Убрать выполненные</button>
+        <p class="local-note" data-i18n="footer.local">Задачи хранятся только в этом браузере.</p>
+      </footer>
+    </main>
+  </div>
 
   <div class="toast" id="toast" role="status" hidden>
-    <span id="toast-text"></span>
-    <button type="button" class="link-btn" id="toast-undo">Вернуть</button>
+    <span class="toast-text" id="toast-text"></span>
+    <button type="button" class="toast-undo" id="toast-undo" data-i18n="toast.undo">Вернуть</button>
+    <button type="button" class="toast-close" id="toast-close" data-i18n-attr="aria-label:toast.close" aria-label="Закрыть">
+      <svg class="icon" aria-hidden="true"><use href="#i-x"/></svg>
+    </button>
   </div>
+
+  <dialog class="dialog" id="help" aria-labelledby="help-title">
+    <div class="dialog-head">
+      <h2 id="help-title" data-i18n="help.title">Горячие клавиши</h2>
+      <button type="button" class="icon-btn" id="help-close" data-i18n-attr="aria-label:help.close" aria-label="Закрыть">
+        <svg class="icon" aria-hidden="true"><use href="#i-x"/></svg>
+      </button>
+    </div>
+    <dl class="keys">
+      <div><dt data-i18n="help.new">Новая задача</dt><dd><kbd>N</kbd></dd></div>
+      <div><dt data-i18n="help.search">Поиск</dt><dd><kbd>/</kbd></dd></div>
+      <div><dt data-i18n="help.views">Разделы</dt><dd><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>4</kbd></dd></div>
+      <div><dt data-i18n="help.nav">По задачам</dt><dd><kbd>J</kbd><kbd>K</kbd></dd></div>
+      <div><dt data-i18n="help.toggle">Отметить</dt><dd><kbd>X</kbd></dd></div>
+      <div><dt data-i18n="help.edit">Изменить</dt><dd><kbd>E</kbd></dd></div>
+      <div><dt data-i18n="help.delete">Удалить</dt><dd><kbd>Del</kbd></dd></div>
+      <div><dt data-i18n="help.move">Переместить</dt><dd><kbd>Alt</kbd><kbd>↑</kbd><kbd>↓</kbd></dd></div>
+      <div><dt data-i18n="help.undo">Вернуть</dt><dd><kbd>Ctrl</kbd><kbd>Z</kbd></dd></div>
+      <div><dt data-i18n="help.esc">Закрыть</dt><dd><kbd>Esc</kbd></dd></div>
+      <div><dt data-i18n="help.help">Этот список</dt><dd><kbd>?</kbd></dd></div>
+    </dl>
+  </dialog>
 
   <template id="todo-template">
     <li class="todo">
-      <input class="todo-check" type="checkbox">
-      <span class="todo-title"></span>
-      <button type="button" class="icon-btn todo-edit">
-        <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
-          <path d="M12.5 4.5l3 3L8 15H5v-3l7.5-7.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
-        </svg>
+      <button type="button" class="handle">
+        <svg class="icon" aria-hidden="true"><use href="#i-grip"/></svg>
       </button>
-      <button type="button" class="icon-btn todo-delete">
-        <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
-          <path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-        </svg>
-      </button>
+      <label class="check">
+        <input class="todo-check" type="checkbox">
+        <span class="check-box" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20"><path class="check-path" d="m5.5 10.5 3 3 6-6.5"/></svg></span>
+      </label>
+      <div class="todo-body">
+        <p class="todo-title"></p>
+        <p class="todo-meta"></p>
+      </div>
+      <div class="todo-actions">
+        <button type="button" class="icon-btn todo-edit">
+          <svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg>
+        </button>
+        <button type="button" class="icon-btn todo-delete">
+          <svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>
+        </button>
+      </div>
     </li>
   </template>
 
-  <noscript><p class="empty">Для работы списка нужен включённый JavaScript.</p></noscript>
+  <template id="editor-template">
+    <form class="editor">
+      <label class="field field-title">
+        <span class="field-label" data-i18n="editor.title">Название</span>
+        <input name="title" type="text" maxlength="200" required>
+      </label>
+      <div class="editor-row">
+        <label class="field">
+          <span class="field-label" data-i18n="editor.due">Срок</span>
+          <input name="due" type="date">
+        </label>
+        <label class="field">
+          <span class="field-label" data-i18n="editor.priority">Приоритет</span>
+          <span class="select">
+            <select name="priority">
+              <option value="0" data-i18n="editor.p0">Нет</option>
+              <option value="1">P1</option>
+              <option value="2">P2</option>
+              <option value="3">P3</option>
+            </select>
+            <svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg>
+          </span>
+        </label>
+        <label class="field field-tags">
+          <span class="field-label"><span data-i18n="editor.tags">Метки</span> <span class="field-note" data-i18n="editor.tagsHint"></span></span>
+          <input name="tags" type="text" maxlength="200">
+        </label>
+      </div>
+      <div class="editor-actions">
+        <button type="submit" class="btn-primary" data-i18n="editor.save">Сохранить</button>
+        <button type="button" class="btn-secondary editor-cancel" data-i18n="editor.cancel">Отмена</button>
+      </div>
+    </form>
+  </template>
+
+  <noscript><p class="noscript">Для работы списка нужен включённый JavaScript.</p></noscript>
 </body>
 </html>
