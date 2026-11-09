@@ -55,7 +55,7 @@
         </a>
         <a class="view" href="#/upcoming" data-view="upcoming">
           <svg class="icon" aria-hidden="true"><use href="#i-upcoming"/></svg>
-          <span class="view-label" data-i18n="view.upcoming">Предстоящие</span>
+          <span class="view-label" data-i18n="view.upcoming">Планы</span>
           <span class="view-count" data-count="upcoming"></span>
         </a>
         <a class="view" href="#/done" data-view="done">
@@ -114,7 +114,7 @@
             <input id="search" type="search" maxlength="100" autocomplete="off" spellcheck="false"
                    data-i18n-attr="placeholder:search.placeholder" placeholder="Поиск">
             <kbd class="key-hint" aria-hidden="true">/</kbd>
-            <button type="button" class="search-clear" id="search-clear" hidden>
+            <button type="button" class="search-clear" id="search-clear" data-i18n-attr="aria-label:search.clear" aria-label="Очистить поиск" hidden>
               <svg class="icon" aria-hidden="true"><use href="#i-x"/></svg>
             </button>
           </div>
@@ -135,7 +135,7 @@
         <label class="visually-hidden" for="new-todo" data-i18n="add.label">Новая задача</label>
         <input id="new-todo" name="title" type="text" maxlength="300" enterkeyhint="done"
                aria-describedby="add-hint" data-i18n-attr="placeholder:add.placeholder"
-               placeholder="Например: Позвонить в банк завтра !1 #дела">
+               placeholder="Добавить задачу">
         <kbd class="key-hint" aria-hidden="true">N</kbd>
         <button type="submit" class="btn-primary" data-i18n="add.submit">Добавить</button>
       </form>
@@ -159,7 +159,7 @@
     </main>
   </div>
 
-  <div class="toast" id="toast" role="status" hidden>
+  <div class="toast" id="toast" hidden>
     <span class="toast-text" id="toast-text"></span>
     <button type="button" class="toast-undo" id="toast-undo" data-i18n="toast.undo">Вернуть</button>
     <button type="button" class="toast-close" id="toast-close" data-i18n-attr="aria-label:toast.close" aria-label="Закрыть">
@@ -248,6 +248,6 @@
     </form>
   </template>
 
-  <noscript><p class="noscript">Для работы списка нужен включённый JavaScript.</p></noscript>
+  <noscript><p class="noscript">Для работы списка нужен включённый JavaScript. <span lang="en">This list needs JavaScript turned on.</span></p></noscript>
 </body>
 </html>

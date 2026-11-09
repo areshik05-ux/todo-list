@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   loadTodos, saveTodos, parseTodos, loadSettings, saveSettings, parseSettings,
-  exportJSON, importJSON, STORAGE_KEY, LEGACY_KEY,
+  exportJSON, importJSON, storageAvailable, STORAGE_KEY, LEGACY_KEY,
 } from '../js/storage.js';
 
 function memoryStorage(initial = {}) {
@@ -10,6 +10,7 @@ function memoryStorage(initial = {}) {
   return {
     getItem: (k) => (data.has(k) ? data.get(k) : null),
     setItem: (k, v) => data.set(k, String(v)),
+    removeItem: (k) => data.delete(k),
     raw: data,
   };
 }
@@ -81,6 +82,8 @@ test('запрещённое хранилище: пустой список и с
   assert.equal(saveTodos([full('a')], brokenStorage), false);
   assert.deepEqual(loadSettings(brokenStorage), { lang: null, theme: 'light', sort: 'manual' });
   assert.equal(saveSettings({}, brokenStorage), false);
+  assert.equal(storageAvailable(brokenStorage), false);
+  assert.equal(storageAvailable(memoryStorage()), true);
 });
 
 test('настройки: неизвестные значения заменяются на значения по умолчанию', () => {
@@ -103,4 +106,6 @@ test('импорт чужого или пустого файла ничего н
   assert.equal(importJSON('{"hello": 1}', []), null);
   // голый массив из v1 тоже принимается
   assert.equal(importJSON('[{"id":"x","title":"Из v1"}]', []).count, 1);
+  // «done»: "yes» не делает задачу выполненной
+  assert.equal(importJSON('[{"id":"x","title":"a","done":"yes"}]', []).todos[0].done, false);
 });

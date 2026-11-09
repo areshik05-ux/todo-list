@@ -41,6 +41,8 @@ const toNumber = (s) => NUM_WORDS[s.toLowerCase()] ?? Number(s);
 
 const MONTH_RU = MONTHS_RU.join('|');
 const MONTH_EN = MONTHS_EN.join('|');
+// «may 5» не берём: в «I may 5 times» это не май
+const MONTH_EN_LEAD = MONTHS_EN.filter((m) => m !== 'may').join('|');
 const NUM = '\\d{1,2}|один|одну|два|две|три|четыре|пять|one|two|three|four|five';
 
 // Каждое правило: регулярка и функция, которая по совпадению и «сегодня» даёт дату.
@@ -54,7 +56,8 @@ const DATE_RULES = [
   [re(`через (${NUM}) (?:недел[юиь]|недели)|in (${NUM}) weeks?`),
     (m, t) => addDays(t, 7 * toNumber(m[1] ?? m[2]))],
   ...WEEKDAYS.map(([day, ru, en]) => [
-    re(`(?:(?:в|во) )?(?:${ru})|(?:on |next )?${en}`),
+    // по-русски только с предлогом: «в среду» срок, а «настроить среду» нет
+    re(`(?:в|во) (?:${ru})|(?:on |next )?${en}`),
     (_, t) => nextWeekday(t, day),
   ]),
   // 25.11, 25.11.2026, 25/11. Месяц строго двумя цифрами, чтобы «1.5 литра» не стало 1 мая.
@@ -64,7 +67,7 @@ const DATE_RULES = [
   [re(`(\\d{1,2}) (${MONTH_RU}|${MONTH_EN})(?: (\\d{4}))?`),
     (m, t) => dayMonthKey(t, Number(m[1]), monthIndex(m[2]), m[3] ? Number(m[3]) : undefined)],
   // nov 25, november 25
-  [re(`(${MONTH_EN}) (\\d{1,2})(?: (\\d{4}))?`),
+  [re(`(${MONTH_EN_LEAD}) (\\d{1,2})(?: (\\d{4}))?`),
     (m, t) => dayMonthKey(t, Number(m[2]), monthIndex(m[1]), m[3] ? Number(m[3]) : undefined)],
 ];
 

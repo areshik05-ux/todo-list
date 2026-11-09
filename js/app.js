@@ -3,7 +3,7 @@ import {
   inView, countViews, todayProgress, matchesQuery, sortTodos, sortDone, VIEWS,
 } from './todos.js';
 import {
-  loadTodos, saveTodos, loadSettings, saveSettings, exportJSON, importJSON, STORAGE_KEY, SETTINGS_KEY,
+  loadTodos, saveTodos, loadSettings, saveSettings, exportJSON, importJSON, storageAvailable, STORAGE_KEY, SETTINGS_KEY,
 } from './storage.js';
 import { parseQuickAdd, splitTags } from './parse.js';
 import { todayKey, toKey, addDays } from './dates.js';
@@ -129,7 +129,7 @@ function visibleGroups(today) {
   return [{ items: sortTodos(shown, settings.sort) }];
 }
 
-function render(focus) {
+function render(focus = currentFocus()) {
   const today = todayKey();
   renderedDay = today;
   const counts = countViews(todos, today);
@@ -187,7 +187,10 @@ function render(focus) {
       const n = document.createElement('span');
       n.className = 'group-count';
       n.textContent = String(group.items.length);
-      h.append(n);
+      const sep = document.createElement('span');
+      sep.className = 'visually-hidden';
+      sep.textContent = ': ';
+      h.append(sep, n);
       ul.setAttribute('aria-labelledby', h.id);
       nodes.push(h);
     }
@@ -203,6 +206,7 @@ function render(focus) {
 
   clearDoneBtn.hidden = !(view === 'done' && counts.done > 0 && !query);
   sortSelect.value = settings.sort;
+  sortSelect.disabled = !query && (view === 'upcoming' || view === 'done');
 
   restoreFocus(focus);
 }
@@ -249,7 +253,7 @@ function renderItem(todo, today) {
 
   const check = $('.todo-check', li);
   check.checked = todo.done;
-  check.setAttribute('aria-label', t('task.done', { title: todo.title }));
+  check.setAttribute('aria-label', todo.title);
 
   for (const [sel, key] of [['.todo-edit', 'edit'], ['.todo-delete', 'delete']]) {
     const btn = $(sel, li);
@@ -327,6 +331,7 @@ function renderEditor(todo) {
 function restoreFocus(focus) {
   if (!focus) return;
   if (focus === 'input') return input.focus();
+  if (focus instanceof Element) return focus.focus();
   const item = listWrap.querySelector(`.todo[data-id="${CSS.escape(focus.id)}"]`);
   const target = item && $(focus.selector, item);
   if (target) return target.focus();
@@ -338,6 +343,16 @@ function restoreFocus(focus) {
 function focusOf(el, selector = '.todo-check') {
   const li = el.closest('.todo');
   return { id: li.dataset.id, selector, index: $$('.todo', listWrap).indexOf(li) };
+}
+
+// Перерисовка без явной цели: фокус остаётся на той же кнопке той же задачи.
+const ROW_TARGETS = ['.todo-check', '.handle', '.todo-edit', '.todo-delete', '.meta-tag'];
+
+function currentFocus() {
+  const el = document.activeElement;
+  if (!el || !listWrap.contains(el) || !el.closest('.todo') || el.closest('.editor')) return undefined;
+  const selector = ROW_TARGETS.find((sel) => el.matches(sel)) ?? '.todo-check';
+  return focusOf(el, selector);
 }
 
 function announce(text) {
@@ -389,7 +404,7 @@ function currentParse() {
 function chipText(token, today) {
   if (token.type === 'date') return i18n.groupDate(token.value, today);
   if (token.type === 'priority') return `P${token.value}`;
-  return `#${token.value}`;
+  return token.value;
 }
 
 function updateChips() {
@@ -417,7 +432,10 @@ function updateChips() {
   }));
 }
 
-input.addEventListener('input', updateChips);
+input.addEventListener('input', () => {
+  if (!input.value.trim()) ignoreTokens = [];
+  updateChips();
+});
 
 chips.addEventListener('click', (e) => {
   const btn = e.target.closest('.chip-remove');
@@ -444,8 +462,14 @@ form.addEventListener('submit', (e) => {
   searchClear.hidden = true;
   form.reset();
   ignoreTokens = [];
-  commit(addTodo(todos, parsed), { focus: 'input' });
+  const next = addTodo(todos, parsed);
+  commit(next, { focus: 'input' });
   updateChips();
+  const added = next[0];
+  const shownIn = inView(added, view === 'done' ? 'all' : view, today, dayKeyOf) ? null
+    : added.due && added.due > today ? 'upcoming' : 'all';
+  if (shownIn) showToast(t('toast.addedTo', { title: added.title, view: t(`view.${shownIn}`) }));
+  else announce(t('toast.added', { title: added.title }));
 });
 
 /* Действия со строкой */
@@ -457,12 +481,16 @@ function toggle(li) {
   const snapshot = todos;
   const focus = focusOf(li);
   const hidesDone = !query && (view === 'all' || view === 'upcoming');
-  if (!before.done && hidesDone) {
+  if (before.done) {
+    // сняли галочку, пока задача ещё не ушла: она остаётся на месте
+    clearTimeout(lingering.get(id));
+    lingering.delete(id);
+  } else if (hidesDone) {
     clearTimeout(lingering.get(id));
     lingering.set(id, setTimeout(() => leave(id), LINGER_MS));
   }
   commit(toggleTodo(todos, id), { focus });
-  if (!before.done) offerUndo(snapshot, t('toast.completed', { title: before.title }));
+  if (!before.done) showToast(t('toast.completed', { title: before.title }), { snapshot, focus: { id, selector: '.todo-check' } });
 }
 
 // Отмеченная задача немного стоит на месте с галочкой и только потом уходит.
@@ -486,7 +514,7 @@ function remove(li) {
   const snapshot = todos;
   const index = $$('.todo', listWrap).indexOf(li);
   commit(removeTodo(todos, id), { focus: { id: '', index } });
-  offerUndo(snapshot, t('toast.deleted', { title: todo.title }));
+  showToast(t('toast.deleted', { title: todo.title }), { snapshot, focus: { id, selector: '.todo-check', index } });
 }
 
 function startEditing(li) {
@@ -497,23 +525,39 @@ function startEditing(li) {
   field?.setSelectionRange(field.value.length, field.value.length);
 }
 
-function finishEditing(save) {
+function editedTodos() {
   const editor = $('.editor', listWrap);
-  const id = editingId;
-  if (!id) return;
+  if (!editingId || !editor) return todos;
+  const f = editor.elements;
+  return updateTodo(todos, editingId, {
+    title: f.title.value,
+    due: f.due.value || null,
+    priority: Number(f.priority.value),
+    tags: splitTags(f.tags.value),
+  });
+}
+
+function finishEditing(save, focus = { id: editingId, selector: '.todo-edit', index: 0 }) {
+  if (!editingId) return;
+  const next = save ? editedTodos() : todos;
   editingId = null;
-  const focus = { id, selector: '.todo-edit', index: 0 };
-  if (save && editor) {
-    const f = editor.elements;
-    commit(updateTodo(todos, id, {
-      title: f.title.value,
-      due: f.due.value || null,
-      priority: Number(f.priority.value),
-      tags: splitTags(f.tags.value),
-    }), { focus });
-  } else {
-    render(focus);
+  if (next !== todos) commit(next, { focus });
+  else render(focus);
+}
+
+// Человек ушёл из редактора к другому действию (клик по чужой галочке, метке,
+// разделу): сначала молча сохраняем правку, потом выполняется само действие.
+function flushEditor() {
+  if (!editingId) return;
+  const next = editedTodos();
+  editingId = null;
+  if (next !== todos) {
+    todos = next;
+    storageWarning.hidden = saveTodos(todos);
   }
+  setTimeout(() => {
+    if (!editingId && $('.editor', listWrap)) render();
+  }, 0);
 }
 
 listWrap.addEventListener('change', (e) => {
@@ -548,13 +592,16 @@ listWrap.addEventListener('keydown', (e) => {
   }
 });
 
-// Клик мимо редактора сохраняет правку, как в v1 при потере фокуса.
+// Клик или Tab мимо редактора сохраняет правку, как в v1 при потере фокуса.
+document.addEventListener('pointerdown', (e) => {
+  if (editingId && !e.target.closest?.('.editor')) flushEditor();
+}, true);
+
 listWrap.addEventListener('focusout', (e) => {
   const editor = e.target.closest('.editor');
-  if (!editor) return;
-  setTimeout(() => {
-    if (editingId && editor.isConnected && !editor.contains(document.activeElement)) finishEditing(true);
-  }, 0);
+  // relatedTarget пуст, когда переключились в другое окно: правку не трогаем
+  if (!editor || !e.relatedTarget || editor.contains(e.relatedTarget)) return;
+  flushEditor();
 });
 
 /* Перетаскивание мышью и пальцем за ручку */
@@ -634,32 +681,33 @@ function moveByKeyboard(li, step) {
 
 /* Отмена и сообщения */
 
-function offerUndo(snapshot, message) {
-  showToast(message, snapshot);
-}
-
-function showToast(message, snapshot = null) {
+// snapshot: список до действия (для «Вернуть»); focus: куда вернуть фокус после отмены.
+// Текст дублируем в постоянную live-область: скринридеры не всегда читают
+// только что показанный элемент.
+function showToast(message, { snapshot = null, focus = null } = {}) {
   dropUndo();
   toastText.textContent = message;
   toastUndo.hidden = !snapshot;
   toast.hidden = false;
-  undo = { snapshot, timer: setTimeout(dropUndo, TOAST_MS) };
+  announce(message);
+  undo = { snapshot, focus, timer: setTimeout(dropUndo, TOAST_MS) };
 }
 
 function dropUndo() {
   if (!undo) return;
   clearTimeout(undo.timer);
+  const { focus } = undo;
   undo = null;
-  if (toast.contains(document.activeElement)) input.focus();
+  if (toast.contains(document.activeElement)) restoreFocus(focus ?? 'input');
   toast.hidden = true;
 }
 
 function applyUndo() {
   if (!undo?.snapshot) return;
-  const { snapshot } = undo;
+  const { snapshot, focus } = undo;
   for (const timer of lingering.values()) clearTimeout(timer);
   lingering.clear();
-  commit(snapshot, { focus: 'input' });
+  commit(snapshot, { focus: focus ?? undefined });
 }
 
 toastUndo.addEventListener('click', applyUndo);
@@ -675,8 +723,8 @@ toast.addEventListener('pointerleave', () => {
 clearDoneBtn.addEventListener('click', () => {
   const snapshot = todos;
   const removed = todos.filter((todo) => todo.done).length;
-  commit(clearCompleted(todos), { focus: 'input' });
-  offerUndo(snapshot, t('toast.cleared', { n: removed }));
+  commit(clearCompleted(todos), { focus: $(`[data-view="${view}"]`) });
+  showToast(t('toast.cleared', { n: removed }), { snapshot, focus: clearDoneBtn });
 });
 
 /* Поиск, сортировка, разделы */
@@ -689,7 +737,12 @@ function setQuery(value, focusSearch = false) {
   if (focusSearch) search.focus();
 }
 
-search.addEventListener('input', () => setQuery(search.value));
+let searchTimer = 0;
+search.addEventListener('input', () => {
+  searchClear.hidden = !search.value;
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => setQuery(search.value), 120);
+});
 
 search.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
@@ -715,7 +768,6 @@ window.addEventListener('hashchange', () => {
     searchClear.hidden = true;
   }
   render();
-  $(`[data-view="${view}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 });
 
 // Клик по уже открытому разделу во время поиска возвращает к разделу.
@@ -756,6 +808,11 @@ document.addEventListener('click', (e) => {
   if (!dataPanel.hidden && !e.target.closest('.data')) setDataPanel(false);
 });
 
+// Ушли Tab-ом из меню: закрываем его
+$('.data').addEventListener('focusout', (e) => {
+  if (e.relatedTarget && !e.currentTarget.contains(e.relatedTarget)) setDataPanel(false);
+});
+
 $('#export-btn').addEventListener('click', () => {
   const blob = new Blob([exportJSON(todos)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -779,12 +836,13 @@ importFile.addEventListener('change', async () => {
   if (!file) return;
   const result = file.size <= MAX_IMPORT_BYTES ? importJSON(await file.text(), todos) : null;
   if (!result) {
-    showToast(t('toast.importFailed'));
+    showToast(t('toast.importFailed'), { focus: dataBtn });
+    dataBtn.focus();
     return;
   }
   const snapshot = todos;
-  commit(result.todos, { focus: 'input' });
-  offerUndo(snapshot, t('toast.imported', { n: result.count }));
+  commit(result.todos, { focus: dataBtn });
+  showToast(t('toast.imported', { n: result.count }), { snapshot, focus: dataBtn });
 });
 
 let helpOpener = null;
@@ -898,7 +956,7 @@ document.addEventListener('keydown', (e) => {
   } else if (e.code === 'KeyE') {
     e.preventDefault();
     startEditing(row);
-  } else if (e.key === 'Delete' || e.key === 'Backspace') {
+  } else if (e.key === 'Delete') {
     e.preventDefault();
     remove(row);
   }
@@ -931,6 +989,7 @@ setInterval(() => {
   }
 }, 60_000);
 
+storageWarning.hidden = storageAvailable();
 applyTheme();
 applyLanguage();
 render();

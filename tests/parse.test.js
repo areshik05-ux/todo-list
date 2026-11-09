@@ -53,6 +53,13 @@ test('цифры в обычном тексте не превращаются в
   }
 });
 
+test('обычные слова не превращаются в срок', () => {
+  assert.equal(p('Настроить среду разработки').due, null);
+  assert.equal(p('Пятница: купить торт').due, null);
+  assert.equal(p('I may 5 times').due, null);
+  assert.equal(p('встреча 5 may').due, '2027-05-05');
+});
+
 test('слово внутри другого слова не считается сроком', () => {
   assert.equal(p('Посмотреть todayshow').due, null);
   assert.equal(p('Завтрак с Олей').due, null);

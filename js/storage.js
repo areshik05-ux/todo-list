@@ -14,7 +14,7 @@ export function cleanTodo(t) {
   if (typeof t.id !== 'string' || !t.id || t.id.length > 100) return null;
   const title = normalizeTitle(t.title);
   if (typeof t.title !== 'string' || !title) return null;
-  const done = Boolean(t.done);
+  const done = t.done === true;
   const createdAt = Number.isFinite(Number(t.createdAt)) ? Number(t.createdAt) : 0;
   let completedAt = Number.isFinite(Number(t.completedAt)) && t.completedAt !== null ? Number(t.completedAt) : null;
   // у задач из v1 нет даты выполнения: берём дату создания, лучше не знаем
@@ -71,6 +71,17 @@ export function loadTodos(storage = globalThis.localStorage) {
   } catch {
     // приватный режим Safari или запрещённые cookies
     return [];
+  }
+}
+
+// Можно ли вообще писать: в приватном режиме или с запретом cookies нельзя.
+export function storageAvailable(storage = globalThis.localStorage) {
+  try {
+    storage.setItem('todo-list:probe', '1');
+    storage.removeItem('todo-list:probe');
+    return true;
+  } catch {
+    return false;
   }
 }
 
