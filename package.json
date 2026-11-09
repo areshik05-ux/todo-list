@@ -1,0 +1,14 @@
+{
+  "name": "todo-list",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Список задач на чистом HTML, CSS и JavaScript",
+  "type": "module",
+  "scripts": {
+    "start": "npx --yes serve@14 .",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
