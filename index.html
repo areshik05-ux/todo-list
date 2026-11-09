@@ -104,7 +104,7 @@
     <main class="main">
       <header class="main-head">
         <div class="main-title">
-          <h1 id="view-title">Все</h1>
+          <h1 id="view-title" tabindex="-1">Все</h1>
           <p class="view-sub" id="view-sub"></p>
         </div>
         <div class="main-tools">
@@ -133,7 +133,7 @@
       <form class="composer" id="add-form" autocomplete="off">
         <svg class="icon composer-icon" aria-hidden="true"><use href="#i-plus"/></svg>
         <label class="visually-hidden" for="new-todo" data-i18n="add.label">Новая задача</label>
-        <input id="new-todo" name="title" type="text" maxlength="300" enterkeyhint="done"
+        <input id="new-todo" type="text" maxlength="300" enterkeyhint="done"
                aria-describedby="add-hint" data-i18n-attr="placeholder:add.placeholder"
                placeholder="Добавить задачу">
         <kbd class="key-hint" aria-hidden="true">N</kbd>

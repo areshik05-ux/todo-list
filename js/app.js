@@ -77,9 +77,6 @@ function dayKeyOf(ms) {
   return toKey(new Date(ms));
 }
 
-function storeSettings() {
-  saveSettings(settings);
-}
 
 /* Отрисовка */
 
@@ -337,7 +334,7 @@ function restoreFocus(focus) {
   if (target) return target.focus();
   const rows = $$('.todo', listWrap);
   const neighbour = rows[Math.min(focus.index ?? 0, rows.length - 1)];
-  ($('.todo-check', neighbour ?? document.body) ?? input).focus();
+  ($('.todo-check', neighbour ?? document.body) ?? $('#view-title')).focus();
 }
 
 function focusOf(el, selector = '.todo-check') {
@@ -547,17 +544,22 @@ function finishEditing(save, focus = { id: editingId, selector: '.todo-edit', in
 
 // Человек ушёл из редактора к другому действию (клик по чужой галочке, метке,
 // разделу): сначала молча сохраняем правку, потом выполняется само действие.
-function flushEditor() {
+// Перерисовываем не сразу, а после клика: иначе кнопка под курсором
+// исчезнет между нажатием и отпусканием и клик потеряется.
+function flushEditor(afterPointer = false) {
   if (!editingId) return;
   const next = editedTodos();
   editingId = null;
   if (next !== todos) {
+    dropUndo(); // снимок для «Вернуть» сделан до правки и откатил бы её
     todos = next;
     storageWarning.hidden = saveTodos(todos);
   }
-  setTimeout(() => {
+  const refresh = () => setTimeout(() => {
     if (!editingId && $('.editor', listWrap)) render();
   }, 0);
+  if (afterPointer) document.addEventListener('pointerup', refresh, { once: true, capture: true });
+  else refresh();
 }
 
 listWrap.addEventListener('change', (e) => {
@@ -594,7 +596,7 @@ listWrap.addEventListener('keydown', (e) => {
 
 // Клик или Tab мимо редактора сохраняет правку, как в v1 при потере фокуса.
 document.addEventListener('pointerdown', (e) => {
-  if (editingId && !e.target.closest?.('.editor')) flushEditor();
+  if (editingId && !e.target.closest?.('.editor')) flushEditor(true);
 }, true);
 
 listWrap.addEventListener('focusout', (e) => {
@@ -755,7 +757,7 @@ searchClear.addEventListener('click', () => setQuery('', true));
 
 sortSelect.addEventListener('change', () => {
   settings.sort = sortSelect.value;
-  storeSettings();
+  saveSettings(settings);
   render();
 });
 
@@ -785,7 +787,7 @@ for (const btn of $$('[data-lang]')) {
   btn.addEventListener('click', () => {
     if (settings.lang === btn.dataset.lang) return;
     settings.lang = btn.dataset.lang;
-    storeSettings();
+    saveSettings(settings);
     applyLanguage();
     render();
   });
@@ -793,7 +795,7 @@ for (const btn of $$('[data-lang]')) {
 
 themeBtn.addEventListener('click', () => {
   settings.theme = settings.theme === 'dark' ? 'light' : 'dark';
-  storeSettings();
+  saveSettings(settings);
   applyTheme();
 });
 

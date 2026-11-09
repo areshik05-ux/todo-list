@@ -536,6 +536,7 @@ progress::-moz-progress-bar {
 }
 
 h1 {
+  outline: none;
   font: 650 20px/28px var(--font-display);
   letter-spacing: -0.01em;
 }

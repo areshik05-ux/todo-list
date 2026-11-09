@@ -60,10 +60,6 @@ export function updateTodo(todos, id, changes) {
   });
 }
 
-export function renameTodo(todos, id, text) {
-  return updateTodo(todos, id, { title: text });
-}
-
 export function removeTodo(todos, id) {
   return todos.filter((t) => t.id !== id);
 }
@@ -180,14 +176,4 @@ export function sortTodos(todos, sort) {
 // Выполненные: сначала закрытые последними.
 export function sortDone(todos) {
   return [...todos].sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0));
-}
-
-export function groupByDue(todos) {
-  const groups = [];
-  for (const t of todos) {
-    const last = groups.at(-1);
-    if (last && last.due === t.due) last.items.push(t);
-    else groups.push({ due: t.due, items: [t] });
-  }
-  return groups;
 }

@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  addTodo, toggleTodo, renameTodo, updateTodo, removeTodo, clearCompleted,
+  addTodo, toggleTodo, updateTodo, removeTodo, clearCompleted,
   moveTodo, moveTodoAfter, moveWithin, inView, countViews, todayProgress, matchesQuery,
-  sortTodos, sortDone, groupByDue, normalizeTitle, MAX_TITLE_LENGTH,
+  sortTodos, sortDone, normalizeTitle, MAX_TITLE_LENGTH,
 } from '../js/todos.js';
 import { toKey } from '../js/dates.js';
 
@@ -53,8 +53,8 @@ test('отметка выполнения ставит и снимает дат�
 
 test('переименование: пустое название не сохраняется', () => {
   const list = [make('a')];
-  assert.equal(renameTodo(list, 'a', '  Новое  ')[0].title, 'Новое');
-  assert.equal(renameTodo(list, 'a', '   ')[0].title, 'a');
+  assert.equal(updateTodo(list, 'a', { title: '  Новое  ' })[0].title, 'Новое');
+  assert.equal(updateTodo(list, 'a', { title: '   ' })[0].title, 'a');
 });
 
 test('правка меняет только переданные поля', () => {
@@ -133,9 +133,7 @@ test('сортировка по сроку и приоритету устойч�
   assert.deepEqual(sortTodos(list, 'manual').map((t) => t.id), ['a', 'b', 'c', 'd', 'e']);
 });
 
-test('выполненные идут от последних, группы по дате склеивают соседей', () => {
+test('выполненные идут от последних', () => {
   const done = [make('a', { completedAt: 1 }), make('b', { completedAt: 3 }), make('c', { completedAt: 2 })];
   assert.deepEqual(sortDone(done).map((t) => t.id), ['b', 'c', 'a']);
-  const groups = groupByDue([make('a', { due: 'x' }), make('b', { due: 'x' }), make('c', { due: 'y' })]);
-  assert.deepEqual(groups.map((g) => [g.due, g.items.length]), [['x', 2], ['y', 1]]);
 });

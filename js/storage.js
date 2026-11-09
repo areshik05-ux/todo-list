@@ -9,6 +9,10 @@ export const SETTINGS_KEY = 'todo-list:settings';
 // В localStorage может лежать что угодно: старая версия, ручная правка
 // через DevTools, обрезанная запись. Берём только валидные задачи,
 // недостающие поля заполняем значениями по умолчанию.
+// В Chrome с запретом cookies даже чтение window.localStorage бросает SecurityError,
+// поэтому хранилище берём только внутри try.
+const local = (storage) => storage ?? globalThis.localStorage;
+
 export function cleanTodo(t) {
   if (!t || typeof t !== 'object') return null;
   if (typeof t.id !== 'string' || !t.id || t.id.length > 100) return null;
@@ -60,12 +64,12 @@ export function serialize(todos) {
   return JSON.stringify({ version: 2, todos });
 }
 
-export function loadTodos(storage = globalThis.localStorage) {
+export function loadTodos(storage) {
   try {
-    const raw = storage.getItem(STORAGE_KEY);
+    const raw = local(storage).getItem(STORAGE_KEY);
     if (raw !== null) return parseTodos(raw);
     // первый запуск v2: переносим задачи из v1, старую запись не трогаем
-    const legacy = parseTodos(storage.getItem(LEGACY_KEY));
+    const legacy = parseTodos(local(storage).getItem(LEGACY_KEY));
     if (legacy.length) saveTodos(legacy, storage);
     return legacy;
   } catch {
@@ -75,19 +79,19 @@ export function loadTodos(storage = globalThis.localStorage) {
 }
 
 // Можно ли вообще писать: в приватном режиме или с запретом cookies нельзя.
-export function storageAvailable(storage = globalThis.localStorage) {
+export function storageAvailable(storage) {
   try {
-    storage.setItem('todo-list:probe', '1');
-    storage.removeItem('todo-list:probe');
+    local(storage).setItem('todo-list:probe', '1');
+    local(storage).removeItem('todo-list:probe');
     return true;
   } catch {
     return false;
   }
 }
 
-export function saveTodos(todos, storage = globalThis.localStorage) {
+export function saveTodos(todos, storage) {
   try {
-    storage.setItem(STORAGE_KEY, serialize(todos));
+    local(storage).setItem(STORAGE_KEY, serialize(todos));
     return true;
   } catch {
     return false;
@@ -111,17 +115,17 @@ export function parseSettings(raw) {
   }
 }
 
-export function loadSettings(storage = globalThis.localStorage) {
+export function loadSettings(storage) {
   try {
-    return parseSettings(storage.getItem(SETTINGS_KEY));
+    return parseSettings(local(storage).getItem(SETTINGS_KEY));
   } catch {
     return { ...DEFAULT_SETTINGS };
   }
 }
 
-export function saveSettings(settings, storage = globalThis.localStorage) {
+export function saveSettings(settings, storage) {
   try {
-    storage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    local(storage).setItem(SETTINGS_KEY, JSON.stringify(settings));
     return true;
   } catch {
     return false;

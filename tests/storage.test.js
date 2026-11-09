@@ -86,6 +86,23 @@ test('запрещённое хранилище: пустой список и с
   assert.equal(storageAvailable(memoryStorage()), true);
 });
 
+test('запрет на само обращение к localStorage (Chrome без cookies) не роняет загрузку', () => {
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    get() { throw new Error('SecurityError'); },
+  });
+  try {
+    assert.deepEqual(loadTodos(), []);
+    assert.equal(saveTodos([]), false);
+    assert.equal(storageAvailable(), false);
+    assert.deepEqual(loadSettings(), { lang: null, theme: 'light', sort: 'manual' });
+  } finally {
+    if (original) Object.defineProperty(globalThis, 'localStorage', original);
+    else delete globalThis.localStorage;
+  }
+});
+
 test('настройки: неизвестные значения заменяются на значения по умолчанию', () => {
   assert.deepEqual(parseSettings('{"lang":"en","theme":"dark","sort":"due"}'), { lang: 'en', theme: 'dark', sort: 'due' });
   assert.deepEqual(parseSettings('{"lang":"de","theme":"pink","sort":"x"}'), { lang: null, theme: 'light', sort: 'manual' });
