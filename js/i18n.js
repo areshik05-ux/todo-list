@@ -110,7 +110,6 @@ const ru = {
   'toast.movedToday': { one: '{n} задача перенесена на сегодня', few: '{n} задачи перенесены на сегодня', many: '{n} задач перенесено на сегодня', other: '{n} задачи перенесено на сегодня' },
   'toast.completedNext': 'Готово: «{title}». Следующий раз: {when}',
   'help.reschedule': 'На сегодня или на завтра (фокус на задаче)',
-  'progress.allCount': 'Всё на сегодня сделано: {done} из {total}',
   'help.quick': 'Быстрый ввод',
   'help.keys': 'Клавиши',
   'help.qDate': 'Срок',
@@ -179,6 +178,8 @@ const ru = {
   'status.planned': 'На сегодня {tasks}.',
   'status.progress': 'Сделано {done} из {total}. Осталось: {left}.',
   'status.rest': 'Можно отдохнуть.',
+  'status.allDone': 'Всё на сегодня сделано: {done} из {total}.',
+  'status.moved': 'Остальное перенесено на завтра. Можно отдохнуть.',
   'status.week': 'За эту неделю сделано: {n}.',
   'status.full': 'Если это много, часть можно перенести на завтра.',
   'ring.label': 'Сделано {done} из {total}',
@@ -205,7 +206,7 @@ const ru = {
   'ring.done': 'сделано',
   'ring.allDone': 'всё сделано',
   'ring.free': 'Свободный день',
-  'week.free': 'Неделя свободна',
+  'ring.pick': 'Пока ничего',
   'week.dayDone': '{date}: всё сделано',
   'count.allDone': 'всё сделано',
   'done.earlier': 'Раньше',
@@ -218,7 +219,7 @@ const ru = {
   'empty.searchText': 'Проверьте раскладку и написание или уберите часть слов.',
   'empty.tagTitle': 'С меткой {tag} задач нет.',
   'empty.clearFilter': 'Убрать фильтр',
-  'empty.todayFree': 'В «Планах» {tasks}, ближайшая: {date}.',
+  'empty.todayFree': 'Ближайшая задача: {date}, всего в «Планах» {tasks}.',
   'empty.openUpcoming': 'Открыть «Планы»',
   'empty.upcomingTitle': 'Планов пока нет.',
   'empty.upcomingText': 'Напишите «в пятницу» или «через неделю», и задача встанет сюда, по дням.',
@@ -235,7 +236,7 @@ const ru = {
   'empty.openToday': 'К задачам на сегодня',
   'toast.samplesShown': 'Примеры добавлены',
   'menu.calendar': 'В календарь',
-  'calendar.done': 'Файл для календаря скачан. Откройте его, и календарь напомнит в 9:00.',
+  'calendar.done': 'Файл для календаря скачан. Откройте его: календарь может напомнить в 9:00.',
   'install.label': 'Установить как приложение',
   'install.done': 'Готово: «Задачи» теперь среди приложений.',
   'backup.never': 'Копии задач ещё не было. Скачайте файл, чтобы не потерять задачи, если браузер очистят.',
@@ -244,7 +245,6 @@ const ru = {
   'backup.reminder': 'есть напоминание',
   'palette.title': 'Команды',
   'palette.placeholder': 'Куда перейти или что сделать',
-  'palette.empty': 'Ничего не нашлось. Попробуйте другое слово.',
   'palette.actions': 'Действия',
   'palette.views': 'Разделы',
   'palette.tasks': 'Задачи',
@@ -252,6 +252,13 @@ const ru = {
   'palette.light': 'Светлая тема',
   'palette.create': 'Новая задача: «{title}»',
   'palette.done': 'сделана',
+  'palette.kw.theme': 'тема оформление тёмная светлая theme dark light',
+  'palette.kw.lang': 'язык language русский english',
+  'palette.kw.export': 'скачать копия экспорт json download export backup',
+  'palette.kw.import': 'загрузить импорт файл import load',
+  'palette.kw.help': 'справка клавиши помощь help keys shortcuts',
+  'palette.kw.new': 'новая добавить задача new add task',
+  'week.hint': 'Стрелки влево и вправо: другой день',
   'help.palette': 'Команды и поиск по задачам',
 };
 
@@ -273,7 +280,7 @@ const en = {
   'add.hintUpcoming': 'A task without a date will be due tomorrow',
   'chip.ignore': 'Don’t recognize “{text}”',
   'search.label': 'Search tasks',
-  'search.placeholder': 'Search tasks',
+  'search.placeholder': 'Search',
   'search.clear': 'Clear search',
   'sort.label': 'Order',
   'sort.manual': 'My order',
@@ -360,7 +367,6 @@ const en = {
   'toast.movedToday': { one: '{n} task moved to today', other: '{n} tasks moved to today' },
   'toast.completedNext': 'Done: “{title}”. Next time: {when}',
   'help.reschedule': 'Today or tomorrow (when focused)',
-  'progress.allCount': 'All done for today: {done} of {total}',
   'help.quick': 'Quick add',
   'help.keys': 'Keys',
   'help.qDate': 'Due date',
@@ -429,6 +435,8 @@ const en = {
   'status.planned': '{tasks} for today.',
   'status.progress': '{done} of {total} done. {left} left.',
   'status.rest': 'Time to rest.',
+  'status.allDone': 'All done for today: {done} of {total}.',
+  'status.moved': 'The rest is moved to tomorrow. Time to rest.',
   'status.week': 'Done this week: {n}.',
   'status.full': 'If that’s a lot, move some to tomorrow.',
   'ring.label': '{done} of {total} done',
@@ -455,7 +463,7 @@ const en = {
   'ring.done': 'done',
   'ring.allDone': 'all done',
   'ring.free': 'A free day',
-  'week.free': 'The week is free',
+  'ring.pick': 'Nothing yet',
   'week.dayDone': '{date}: all done',
   'count.allDone': 'all done',
   'done.earlier': 'Earlier',
@@ -485,7 +493,7 @@ const en = {
   'empty.openToday': 'Go to Today',
   'toast.samplesShown': 'Examples added',
   'menu.calendar': 'Add to calendar',
-  'calendar.done': 'Calendar file downloaded. Open it and your calendar will remind you at 9:00.',
+  'calendar.done': 'Calendar file downloaded. Open it: your calendar can remind you at 9:00.',
   'install.label': 'Install as an app',
   'install.done': 'Done: Tasks is now among your apps.',
   'backup.never': 'No backup yet. Download a file so your tasks survive a cleared browser.',
@@ -494,7 +502,6 @@ const en = {
   'backup.reminder': 'reminder',
   'palette.title': 'Commands',
   'palette.placeholder': 'Go to or do something',
-  'palette.empty': 'Nothing found. Try another word.',
   'palette.actions': 'Actions',
   'palette.views': 'Views',
   'palette.tasks': 'Tasks',
@@ -502,6 +509,13 @@ const en = {
   'palette.light': 'Light theme',
   'palette.create': 'New task: “{title}”',
   'palette.done': 'done',
+  'palette.kw.theme': 'theme dark light тема тёмная светлая',
+  'palette.kw.lang': 'language язык english русский',
+  'palette.kw.export': 'download export backup json скачать копия',
+  'palette.kw.import': 'import load file загрузить',
+  'palette.kw.help': 'help keys shortcuts справка клавиши',
+  'palette.kw.new': 'new add task новая добавить',
+  'week.hint': 'Left and right arrows: another day',
   'help.palette': 'Commands and task search',
 };
 
@@ -537,7 +551,8 @@ export function createI18n(lang) {
   const long = new Intl.DateTimeFormat(locale, { weekday: 'long', day: 'numeric', month: 'long' });
 
   const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
-  const trimDot = (s) => s.replace(/\.$/, '');
+  // «нояб.» с точкой по правилам русского; у английских «Nov» точки и так нет
+  const trimDot = (s) => (lang === 'ru' ? s : s.replace(/\.$/, ''));
   // год пишем, только если он не текущий: «3 янв 2027»
   const withYear = (key, today, text) => (key.slice(0, 4) === today.slice(0, 4) ? text : `${text} ${key.slice(0, 4)}`);
 
@@ -581,7 +596,13 @@ export function createI18n(lang) {
 
   const monthLong = new Intl.DateTimeFormat(locale, { month: 'long' });
   // Листок дня: «ноябрь», «среда»
-  const leafParts = (date) => ({ month: monthLong.format(date), weekday: weekday.format(date) });
+  const dayMonthLong = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long' });
+  const leafParts = (date) => ({
+    month: monthLong.format(date),
+    weekday: weekday.format(date),
+    // «ноября» для подписи под числом; в английском месяц не склоняется
+    monthOf: dayMonthLong.formatToParts(date).find((p) => p.type === 'month')?.value ?? monthLong.format(date),
+  });
 
   return { lang, locale, t, relativeDate, groupDate, longDate, shortDate, weekCell, leafParts };
 }

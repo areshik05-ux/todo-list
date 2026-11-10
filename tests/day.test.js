@@ -101,3 +101,40 @@ test('готовые по дням закрытия, свежие сверху',
     ['2026-11-10', ['a']],
   ]);
 });
+
+test('строка дня: ветки по порядку', async () => {
+  const { dayStatus } = await import('../js/todos.js');
+  const keys = (d) => dayStatus({ all: 1, open: 0, done: 0, total: 0, suggestions: 0, week: 0, ...d }).map(([k]) => k);
+  assert.deepEqual(keys({ all: 0 }), ['status.empty']);
+  assert.deepEqual(keys({ suggestions: 2 }), ['status.pick']);
+  assert.deepEqual(keys({}), ['status.free']);
+  assert.deepEqual(keys({ suggestions: 3, restMoved: true }), ['status.moved']);
+  assert.deepEqual(keys({ open: 1, total: 1 }), ['status.planned']);
+  assert.deepEqual(keys({ open: 6, total: 6 }), ['status.planned', 'status.full']);
+  assert.deepEqual(keys({ open: 5, done: 2, total: 7 }), ['status.progress']);
+  assert.deepEqual(keys({ open: 6, done: 1, total: 7 }), ['status.progress', 'status.full']);
+  assert.deepEqual(keys({ done: 3, total: 3, week: 3 }), ['status.allDone', 'status.rest']);
+  assert.deepEqual(keys({ done: 3, total: 3, week: 9 }), ['status.allDone', 'status.rest', 'status.week']);
+  // перенос на завтра не меняет строку, если на сегодня что-то осталось
+  assert.deepEqual(keys({ open: 1, total: 1, restMoved: true }), ['status.planned']);
+});
+
+test('блок «Можно взять»: скрыт, свёрнут после закрытия дня и вечернего переноса, открыт', async () => {
+  const { planMode } = await import('../js/todos.js');
+  assert.equal(planMode({ open: 0, closed: false, suggestions: 0 }), 'hidden');
+  assert.equal(planMode({ open: 6, closed: false, suggestions: 3 }), 'hidden');
+  assert.equal(planMode({ open: 0, closed: false, suggestions: 3 }), 'open');
+  assert.equal(planMode({ open: 0, closed: true, suggestions: 3 }), 'folded');
+  assert.equal(planMode({ open: 0, closed: false, suggestions: 3 }, { restMoved: true }), 'folded');
+  assert.equal(planMode({ open: 0, closed: false, suggestions: 3 }, { restMoved: true, again: true }), 'open');
+});
+
+test('перестановка: последняя открытая не уходит под сделанную', async () => {
+  const { moveWithin } = await import('../js/todos.js');
+  const list = [make('a'), make('b'), make('dn', { done: true, completedAt: 1 }), make('c')];
+  // в «Сегодня» стрелки ходят только среди открытых строк
+  const openIds = ['a', 'b', 'c'];
+  assert.equal(moveWithin(list, openIds, 'c', 1), list);
+  assert.deepEqual(moveWithin(list, openIds, 'b', 1).map((t) => t.id), ['a', 'dn', 'c', 'b']);
+  assert.deepEqual(moveWithin(list, openIds, 'c', -1).map((t) => t.id), ['a', 'c', 'b', 'dn']);
+});

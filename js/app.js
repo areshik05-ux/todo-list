@@ -2,7 +2,7 @@ import {
   addTodo, toggleTodo, completeTodo, updateTodo, removeTodo, clearCompleted, moveTodo, moveTodoAfter, moveWithin,
   toggleStep, stepProgress, rescheduleOverdue, addSteps, removeSamples, MAX_STEPS,
   inView, countViews, todayProgress, matchesQuery, sortTodos, sortDone, VIEWS,
-  suggestForToday, moveOpenTo, doneThisWeek, weekLoad, greetingKey, groupDoneByDay,
+  suggestForToday, moveOpenTo, doneThisWeek, weekLoad, greetingKey, groupDoneByDay, dayStatus, planMode,
 } from './todos.js';
 import {
   loadTodos, loadTodosReport, saveTodos, loadSettings, saveSettings, exportJSON, importJSON, storageAvailable, isFirstVisit,
@@ -47,7 +47,7 @@ const rowMenu = $('#row-menu');
 const samplesBar = $('#samples-bar');
 const main = $('#main');
 const viewTitle = $('#view-title');
-const dayStatus = $('#day-status');
+const dayStatusEl = $('#day-status');
 const dayActions = $('#day-actions');
 const leaf = $('#leaf');
 const ringBox = $('#ring-box');
@@ -60,6 +60,7 @@ const planList = $('#plan-list');
 const planFoot = $('#plan-foot');
 const planAgain = $('#plan-again');
 const content = $('#content');
+const searchToggle = $('#search-toggle');
 
 const LINGER_MS = 700; // столько отмеченная задача остаётся на месте, прежде чем уйти в «Готово»
 const LEAVE_MS = 240;
@@ -102,8 +103,11 @@ let planExpanded = false; // «Показать ещё»: все предлож�
 let planAgainOpen = false; // день закрыт, но человек сам попросил ещё задач
 let pendingJump = null; // клик по дню недели: куда прокрутить после смены раздела
 let weekFocus = null; // день недели, который получает Tab (переходящий tabindex)
+// день, время суток и вечер, для которых нарисована шапка
 let renderedSlot = '';
-let persistAsked = false; // просьба хранить данные постоянно: один раз, после своей задачи // день, время суток и вечер, для которых нарисована шапка
+let persistAsked = false; // просьба хранить данные постоянно: один раз, после своей задачи
+let restMovedDay = null; // вечером «перенести оставшиеся»: в этот день предложения свёрнуты
+let lastDay = null; // итог дня с последней отрисовки: не считать его заново при отметке
 
 /* Состояние */
 
@@ -228,27 +232,23 @@ function dayInfo(today) {
     suggestions: suggestForToday(todos, today),
     week: doneThisWeek(todos, today, dayKeyOf),
     all: todos.length,
+    restMoved: restMovedDay === today && progress.total === 0,
   };
 }
 
 function statusText(d) {
-  if (!d.all) return t('status.empty');
-  if (!d.total) return t(d.suggestions.length ? 'status.pick' : 'status.free');
-  if (d.closed) {
-    const parts = [`${t('progress.allCount', d)}.`, t('status.rest')];
-    if (d.week > d.done) parts.push(t('status.week', { n: d.week }));
-    return parts.join(' ');
-  }
-  const base = d.done
-    ? t('status.progress', { done: d.done, total: d.total, left: d.open })
-    : t('status.planned', { tasks: t('tasks', { n: d.total }) });
-  return d.open >= FULL_DAY ? `${base} ${t('status.full')}` : base;
+  const parts = dayStatus({ ...d, suggestions: d.suggestions.length, restMoved: d.restMoved }, FULL_DAY);
+  return parts.map(([key, params]) => t(key, { ...params, tasks: t('tasks', { n: params.total ?? 0 }) })).join(' ');
 }
 
 function renderHeader(d, total) {
   const today = view === 'today' && !query;
   main.classList.toggle('is-today', view === 'today');
   main.classList.toggle('is-search', Boolean(query));
+  // раздел нарисован: дальше раскладкой управляют классы, а не data-boot из boot.js
+  main.classList.add('is-ready');
+  main.classList.toggle('has-tasks', todos.length > 0);
+  searchToggle.setAttribute('aria-expanded', String(main.classList.contains('tools-open') || Boolean(query)));
   const title = query ? t('view.search') : t(`view.${view}`);
   if (today) {
     // на экране приветствие, скринридер слышит и название раздела: «Сегодня. Добрый вечер»
@@ -265,16 +265,17 @@ function renderHeader(d, total) {
   $('#view-sub').textContent = query ? t('found', { n: total })
     : today ? i18n.longDate(new Date())
       : t('tasks', { n: total }) + week;
-  dayStatus.hidden = !today;
-  if (today) dayStatus.textContent = statusText(d);
+  dayStatusEl.hidden = !today;
+  if (today) dayStatusEl.textContent = statusText(d);
   // вечером: перенести всё оставшееся на завтра
   dayActions.hidden = !(today && new Date().getHours() >= EVENING_HOUR && d.open > 0);
 }
 
 function renderLeaf(d) {
   const now = new Date();
-  const { month, weekday } = i18n.leafParts(now);
+  const { month, weekday, monthOf } = i18n.leafParts(now);
   $('#leaf-month').textContent = month;
+  $('#leaf-month-of').textContent = monthOf;
   $('#leaf-num').textContent = String(now.getDate());
   $('#leaf-wd').textContent = weekday;
   leaf.classList.toggle('is-closed', d.closed);
@@ -285,21 +286,21 @@ function renderLeaf(d) {
   const off = d.total ? 100 - (d.done / d.total) * 100 : 100;
   $('#ring-arc').style.setProperty('--ring-off', String(off));
   $('#ring-count').textContent = d.total ? t('ring.count', d) : '';
-  $('#ring-word').textContent = t(!d.total ? 'ring.free' : d.closed ? 'ring.allDone' : 'ring.done');
+  $('#ring-word').textContent = t(!d.total ? (d.suggestions.length ? 'ring.pick' : 'ring.free') : d.closed ? 'ring.allDone' : 'ring.done');
 }
 
 // Неделя: сегодня и шесть дней вперёд. Перерисовывается, только если что-то поменялось.
 function renderWeek(d, today) {
   const load = weekLoad(todos, today);
-  const key = JSON.stringify([load, today, settings.lang, d.closed]);
-  $('#week-note').hidden = load.some((day) => day.count > 0) || d.closed;
+  if (!load.some((day) => day.date === weekFocus)) weekFocus = today;
+  const key = JSON.stringify([load, today, settings.lang, d.closed, weekFocus]);
   if (weekList.dataset.key === key) return;
   weekList.dataset.key = key;
   const hadFocus = weekList.contains(document.activeElement) ? document.activeElement.dataset.date : null;
-  if (!load.some((day) => day.date === weekFocus)) weekFocus = today;
   weekList.replaceChildren(...load.map(({ date, count }, i) => {
     const cell = i18n.weekCell(date);
     const li = document.createElement('li');
+    li.setAttribute('role', 'none');
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'week-day';
@@ -389,12 +390,16 @@ function renderPlan(d, today) {
   } else if (listWrap.nextElementSibling !== planZone) {
     listWrap.after(planZone);
   }
-  if (!d.closed) planAgainOpen = false;
-  // день полон (6+) или искать нечего: предложений нет
-  const show = view === 'today' && !query && d.suggestions.length > 0 && d.open < FULL_DAY;
-  const folded = d.closed && !planAgainOpen;
-  planSection.hidden = !show || folded;
-  planAgain.hidden = !show || !folded;
+  if (!d.closed && !d.restMoved) planAgainOpen = false;
+  // день полон (6+), брать нечего или идёт поиск: блока нет; день закрыт или
+  // остальное перенесено вечером: одна кнопка «Взять ещё», без списка
+  const mode = view === 'today' && !query
+    ? planMode({ open: d.open, closed: d.closed, suggestions: d.suggestions.length }, { restMoved: d.restMoved, again: planAgainOpen, full: FULL_DAY })
+    : 'hidden';
+  planSection.hidden = mode !== 'open';
+  planAgain.hidden = mode !== 'folded';
+  // класс вместо :has() в CSS: перерисовка длинного списка не пересчитывает стили лишний раз
+  planZone.classList.toggle('is-shown', mode !== 'hidden');
   if (planSection.hidden) return;
 
   const open = !settings.planFolded;
@@ -430,20 +435,21 @@ function emptyModel(d) {
   switch (view) {
     case 'today': {
       // пусто совсем: строка в шапке уже всё сказала, здесь только примеры
-      if (!d.all) return { examples: true, ghosts: true };
-      // на сегодня пусто, но есть что взять: предложения сверху, под ними примеры ввода
-      if (d.total || d.suggestions.length) return { examples: true };
+      if (!d.all) return { examples: true };
+      // на сегодня пусто, но есть что взять: предложения сверху; примеры ввода только новичку
+      const teach = d.all <= 2 ? { examples: true } : null;
+      if (d.total || d.suggestions.length || d.restMoved) return teach;
       const next = todos.filter((todo) => !todo.done && todo.due !== null).map((todo) => todo.due).sort()[0];
-      if (!next) return { examples: true };
+      if (!next) return teach;
       return {
         text: t('empty.todayFree', { tasks: t('tasks', { n: d.counts.upcoming }), date: i18n.groupDate(next, todayKey()) }),
         actions: [['open-upcoming', t('empty.openUpcoming')]],
       };
     }
     case 'upcoming':
-      return { title: t('empty.upcomingTitle'), text: t('empty.upcomingText'), actions: [['focus-add', t('empty.plan')]], ghosts: true };
+      return { title: t('empty.upcomingTitle'), text: t('empty.upcomingText'), actions: [['focus-add', t('empty.plan')]] };
     case 'done':
-      return { title: t('empty.doneTitle'), text: t('empty.doneText'), actions: [['open-today', t('empty.openToday')]], ghosts: true };
+      return { title: t('empty.doneTitle'), text: t('empty.doneText'), actions: [['open-today', t('empty.openToday')]] };
     default:
       if (!d.all) {
         return {
@@ -451,7 +457,6 @@ function emptyModel(d) {
           text: t('empty.allFirstText'),
           actions: [['focus-add', t('empty.addTask')], ['show-samples', t('empty.showSamples')]],
           examples: true,
-          ghosts: true,
         };
       }
       return { title: t('empty.allDoneTitle'), text: t('empty.allDoneText'), actions: [['open-done', t('empty.openDone')]] };
@@ -550,6 +555,9 @@ function render(focus = currentFocus()) {
   renderedDay = today;
   renderedSlot = daySlot();
   const d = dayInfo(today);
+  lastDay = { today, closed: d.closed };
+  // на сегодня снова что-то есть: вечерний перенос больше не сворачивает предложения
+  if (d.total) restMovedDay = null;
   const { counts } = d;
 
   for (const link of $$('[data-view]')) {
@@ -723,7 +731,7 @@ function cachedItem(todo, today) {
   }
   const lower = todo.title.toLowerCase();
   const marks = queryWords().filter((w) => lower.includes(w));
-  const key = JSON.stringify([todo, today, marks, settings.lang, openDetails.has(todo.id), menu?.id === todo.id && menu.kind]);
+  const key = JSON.stringify([todo, today, marks, settings.lang, openDetails.has(todo.id), menu?.id === todo.id && menu.kind, view === 'done']);
   const hit = rowCache.get(todo.id);
   if (hit?.key === key && !hit.li.classList.contains('is-leaving')) return hit.li;
   const li = renderItem(todo, today);
@@ -763,8 +771,8 @@ function renderItem(todo, today) {
   highlight($('.todo-title-text', li), todo.title);
   const meta = $('.todo-meta', li);
 
-  // порядок в строке: срок, повтор, шаги, приоритет, метки
-  if (todo.due) {
+  // порядок в строке: срок, повтор, шаги, приоритет, метки. В «Готово» срок уже не важен.
+  if (todo.due && !(todo.done && view === 'done')) {
     // у открытой задачи срок кнопкой: нажал и перенёс, без редактора
     const due = document.createElement(todo.done ? 'span' : 'button');
     due.className = 'meta-item meta-due';
@@ -1032,7 +1040,11 @@ function addStepFromInput(field) {
 function restoreFocus(focus) {
   if (!focus) return;
   if (focus === 'input') return input.focus();
-  if (focus instanceof Element) return focus.focus();
+  if (focus instanceof Element) {
+    // кнопка исчезла или спрятана: запасной вариант, но на телефоне не поле ввода
+    if (focus.isConnected && focus.getClientRects().length) return focus.focus();
+    return finePointer() ? input.focus() : viewTitle.focus();
+  }
   if (focus.plan) {
     // следующая кнопка «На сегодня»; если её нет, задача в списке
     const btn = $(`.plan-take[data-id="${CSS.escape(focus.plan)}"]`, planList);
@@ -1041,7 +1053,8 @@ function restoreFocus(focus) {
   }
   const item = listWrap.querySelector(`.todo[data-id="${CSS.escape(focus.id)}"]`);
   const target = item && $(focus.selector, item);
-  if (target) return target.focus();
+  // строка на месте, где по ней кликнули: прокрутка не нужна, а без неё фокус дешевле
+  if (target) return target.focus({ preventScroll: Boolean(focus.still) });
   const rows = $$('.todo', listWrap);
   const neighbour = rows[Math.min(focus.index ?? 0, rows.length - 1)];
   ($('.todo-check', neighbour ?? document.body) ?? $('#view-title')).focus();
@@ -1088,7 +1101,7 @@ function applyLanguage() {
   translate();
   document.documentElement.classList.remove('i18n-pending');
   for (const btn of $$('[data-lang]')) btn.setAttribute('aria-pressed', String(btn.dataset.lang === settings.lang));
-  for (const [btn, key] of [[themeBtn, 'theme.dark'], [helpBtn, 'menu.shortcuts'], [dataBtn, 'data.label']]) {
+  for (const [btn, key] of [[themeBtn, 'theme.dark'], [helpBtn, 'menu.shortcuts'], [dataBtn, 'data.label'], [searchToggle, 'search.label']]) {
     btn.setAttribute('aria-label', t(key));
     btn.title = t(key);
   }
@@ -1104,9 +1117,14 @@ function setBrandDate() {
   $('#day-num').textContent = String(new Date().getDate());
 }
 
+// Тема: выбранная человеком, а пока он не выбирал, как в системе.
+function themeNow() {
+  return settings.theme ?? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+}
+
 function applyTheme() {
-  const dark = settings.theme === 'dark';
-  document.documentElement.dataset.theme = settings.theme;
+  const dark = themeNow() === 'dark';
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   themeBtn.setAttribute('aria-pressed', String(dark));
   $('meta[name="theme-color"]').content = dark ? '#151921' : '#ffffff';
 }
@@ -1229,8 +1247,9 @@ function toggle(li) {
   const before = todos.find((todo) => todo.id === id);
   if (!before) return;
   const snapshot = todos;
-  const focus = focusOf(li);
   const hidesDone = !query && (view === 'all' || view === 'upcoming');
+  // в «Все» и «Планах» отмеченная строка стоит на месте: фокус без прокрутки
+  const focus = { ...focusOf(li), still: hidesDone };
   if (before.done) {
     // сняли галочку, пока задача ещё не ушла: она остаётся на месте
     clearTimeout(lingering.get(id));
@@ -1244,7 +1263,7 @@ function toggle(li) {
     lingering.set(id, setTimeout(() => leave(id), LINGER_MS));
   }
   const today = todayKey();
-  const wasClosed = dayInfo(today).closed;
+  const wasClosed = lastDay?.today === today ? lastDay.closed : dayInfo(today).closed;
   justChecked.add(id);
   setTimeout(() => {
     justChecked.delete(id);
@@ -1255,13 +1274,13 @@ function toggle(li) {
   const message = result.next
     ? t('toast.completedNext', { title: before.title, when: whenText(result.next.due, today) })
     : t('toast.completed', { title: before.title });
-  const after = dayInfo(today);
   // последняя задача дня: кольцо замыкается, листок отрывается, одна фраза для скринридера
-  const closesDay = !wasClosed && after.closed && view === 'today' && !query;
+  const closesDay = !wasClosed && lastDay.closed && view === 'today' && !query;
+  const progress = closesDay ? todayProgress(todos, today, dayKeyOf) : null;
   showToast(message, {
     snapshot,
     focus: { id, selector: '.todo-check' },
-    say: closesDay ? `${message}. ${t('progress.allCount', after)}.` : message,
+    say: closesDay ? `${message}. ${t('status.allDone', progress)}` : message,
   });
   if (closesDay) closeDay(today);
 }
@@ -1398,11 +1417,12 @@ rowMenu.addEventListener('click', (e) => {
   if (item.dataset.action === 'calendar') {
     const todo = todos.find((x) => x.id === id);
     const file = todo && toICS(todo, { lang: i18n.lang });
+    const back = $(selector, li) ?? $('.todo-more', li);
+    back?.focus();
     if (file) {
       download(file, icsFileName(todo), ICS_TYPE);
-      showToast(t('calendar.done'));
+      showToast(t('calendar.done'), { focus: back });
     }
-    ($(selector, li) ?? $('.todo-more', li))?.focus();
     return;
   }
   if (item.dataset.action === 'pick') {
@@ -1470,7 +1490,7 @@ function leave(id) {
     if (editingId) return;
     render(hadFocus ? { id: '', index } : undefined);
   };
-  if (!row || editingId || matchMedia('(prefers-reduced-motion: reduce)').matches) return finish();
+  if (!row || editingId || reducedMotion()) return finish();
   row.classList.add('is-leaving');
   setTimeout(finish, LEAVE_MS);
 }
@@ -1712,8 +1732,10 @@ listWrap.addEventListener('pointerdown', (e) => {
     }
     const top = ev.clientY - grab;
     li.style.transform = '';
-    const prev = li.previousElementSibling;
-    const next = li.nextElementSibling;
+    // открытую задачу нельзя утащить под сделанные и наоборот
+    const same = (row) => row && row.classList.contains('is-done') === li.classList.contains('is-done');
+    const prev = same(li.previousElementSibling) ? li.previousElementSibling : null;
+    const next = same(li.nextElementSibling) ? li.nextElementSibling : null;
     if (prev) {
       const r = prev.getBoundingClientRect();
       if (top < r.top + r.height / 2) ul.insertBefore(li, prev);
@@ -1755,7 +1777,9 @@ listWrap.addEventListener('pointerdown', (e) => {
 function moveByKeyboard(li, step) {
   if (!dragEnabled) return;
   const ul = li.parentElement;
-  const ids = [...ul.children].map((row) => row.dataset.id);
+  // в «Сегодня» сделанные стоят под открытыми: двигаем только среди своих
+  const done = li.classList.contains('is-done');
+  const ids = [...ul.children].filter((row) => row.classList.contains('is-done') === done).map((row) => row.dataset.id);
   const id = li.dataset.id;
   const next = moveWithin(todos, ids, id, step);
   if (next === todos) return;
@@ -1773,6 +1797,9 @@ function moveByKeyboard(li, step) {
 // say: что прочесть скринридеру, если это больше текста сообщения (итог дня).
 function showToast(message, { snapshot = null, focus = null, action = null, say = message } = {}) {
   dropUndo();
+  // цели нет: возвращаемся туда, где был фокус до сообщения
+  const was = document.activeElement;
+  if (!focus && was && was !== document.body && !toast.contains(was)) focus = was;
   toastText.textContent = message;
   toastUndo.textContent = action?.label ?? t('toast.undo');
   toastUndo.hidden = !snapshot && !action;
@@ -1786,7 +1813,8 @@ function dropUndo() {
   clearTimeout(undo.timer);
   const { focus } = undo;
   undo = null;
-  if (toast.contains(document.activeElement)) restoreFocus(focus ?? 'input');
+  // на телефоне в поле не возвращаем: открылась бы клавиатура
+  if (toast.contains(document.activeElement)) restoreFocus(focus ?? (finePointer() ? 'input' : viewTitle));
   toast.hidden = true;
 }
 
@@ -1874,6 +1902,9 @@ $('#move-rest').addEventListener('click', () => {
   const n = todos.filter((x) => !x.done && x.due !== null && x.due <= today).length;
   if (!n) return;
   const snapshot = todos;
+  // остальное ушло на завтра: сегодня больше не предлагаем те же задачи обратно
+  restMovedDay = today;
+  planAgainOpen = false;
   // на телефоне поле в фокусе открыло бы клавиатуру: фокус на заголовок
   commit(moveOpenTo(todos, today, addDays(today, 1)), { focus: finePointer() ? 'input' : viewTitle });
   showToast(t('toast.movedRest', { n }), { snapshot, focus: $('#move-rest') });
@@ -1994,6 +2025,14 @@ search.addEventListener('keydown', (e) => {
 
 searchClear.addEventListener('click', () => setQuery('', true));
 
+// Телефон: поиск и порядок спрятаны за лупой в верхней строке, чтобы список был ближе
+searchToggle.addEventListener('click', () => {
+  const open = !main.classList.contains('tools-open');
+  main.classList.toggle('tools-open', open);
+  searchToggle.setAttribute('aria-expanded', String(open || Boolean(query)));
+  if (open) search.focus();
+});
+
 sortSelect.addEventListener('change', () => {
   settings.sort = sortSelect.value;
   saveSettings(settings);
@@ -2008,7 +2047,17 @@ $('.skip-link').addEventListener('click', (e) => {
 window.addEventListener('hashchange', () => {
   if (location.hash && !location.hash.startsWith('#/')) return;
   view = viewFromHash();
-  editingId = null;
+  // ушли из раздела с открытым редактором (кнопка «Назад», жест): правка сохраняется,
+  // как при клике мимо редактора
+  if (editingId) {
+    const next = editedTodos();
+    editingId = null;
+    if (next !== todos) {
+      dropUndo();
+      todos = next;
+      persist();
+    }
+  }
   closeMenu(false);
   openDetails.clear(); // в новом разделе всё свёрнуто
   if (query) {
@@ -2049,8 +2098,12 @@ for (const btn of $$('[data-lang]')) {
   });
 }
 
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+  if (!settings.theme) applyTheme();
+});
+
 themeBtn.addEventListener('click', () => {
-  settings.theme = settings.theme === 'dark' ? 'light' : 'dark';
+  settings.theme = themeNow() === 'dark' ? 'light' : 'dark';
   saveSettings(settings);
   applyTheme();
 });
@@ -2132,7 +2185,7 @@ installBtn.addEventListener('click', async () => {
   // после ответа пункт прячется: фокус заранее на кнопку меню, чтобы не упасть в body
   dataBtn.focus();
   setDataPanel(false);
-  if ((await installer.install()) === 'accepted') showToast(t('install.done'));
+  if ((await installer.install()) === 'accepted') showToast(t('install.done'), { focus: dataBtn });
 });
 
 let helpOpener = null;
@@ -2158,7 +2211,6 @@ helpDialog.addEventListener('click', (e) => {
 const palette = $('#palette');
 const palInput = $('#palette-input');
 const palList = $('#palette-list');
-const palEmpty = $('#palette-empty');
 let palItems = [];
 let palActive = 0;
 let pendingTask = null; // задача, к которой перейти после смены раздела
@@ -2169,19 +2221,19 @@ if (isMac) for (const kbd of $$('.mod-key')) kbd.textContent = '⌘';
 const VIEW_ICONS = { today: 'today', upcoming: 'upcoming', all: 'all', done: 'done' };
 
 function paletteCommands() {
-  const dark = settings.theme === 'dark';
+  const dark = themeNow() === 'dark';
   const other = settings.lang === 'ru' ? 'en' : 'ru';
   return [
-    { group: 'actions', id: 'new', label: t('help.new'), hint: 'N', icon: 'plus', run: () => input.focus() },
+    { group: 'actions', id: 'new', label: t('help.new'), keys: t('palette.kw.new'), hint: 'N', icon: 'plus', run: () => input.focus() },
     ...NAV.map((name, i) => ({
       group: 'views', id: `view-${name}`, label: t(`view.${name}`), hint: String(i + 1), icon: VIEW_ICONS[name],
       run: () => { location.hash = `#/${name}`; },
     })),
-    { group: 'actions', id: 'theme', label: t(dark ? 'palette.light' : 'palette.dark'), icon: dark ? 'sun' : 'moon', run: () => themeBtn.click() },
-    { group: 'actions', id: 'lang', label: other === 'en' ? 'English' : 'Русский', icon: 'hash', run: () => $(`[data-lang="${other}"]`).click() },
-    { group: 'actions', id: 'export', label: t('menu.export'), icon: 'download', run: () => $('#export-btn').click() },
-    { group: 'actions', id: 'import', label: t('menu.import'), icon: 'upload', run: () => importFile.click() },
-    { group: 'actions', id: 'help', label: t('menu.shortcuts'), hint: '?', icon: 'help', run: () => openHelp() },
+    { group: 'actions', id: 'theme', label: t(dark ? 'palette.light' : 'palette.dark'), keys: t('palette.kw.theme'), icon: dark ? 'sun' : 'moon', run: () => themeBtn.click() },
+    { group: 'actions', id: 'lang', label: other === 'en' ? 'English' : 'Русский', keys: t('palette.kw.lang'), icon: 'globe', run: () => $(`[data-lang="${other}"]`).click() },
+    { group: 'actions', id: 'export', label: t('menu.export'), keys: t('palette.kw.export'), icon: 'download', run: () => $('#export-btn').click() },
+    { group: 'actions', id: 'import', label: t('menu.import'), keys: t('palette.kw.import'), icon: 'upload', run: () => importFile.click() },
+    { group: 'actions', id: 'help', label: t('menu.shortcuts'), keys: t('palette.kw.help'), hint: '?', icon: 'help', run: () => openHelp() },
   ];
 }
 
@@ -2192,7 +2244,7 @@ function renderPalette() {
   // пустой запрос: самое частое; иначе всё, что подходит по словам
   let items = paletteCommands();
   if (!words.length) items = items.filter((c) => ['new', 'view-today', 'theme', 'lang', 'export'].includes(c.id));
-  else items = items.filter((c) => match(c.label));
+  else items = items.filter((c) => match(`${c.label} ${c.keys ?? ''}`));
   const today = todayKey();
   const found = words.length ? sortTodos(todos.filter((x) => match(x.title)), 'manual') : [];
   const tasks = [...found.filter((x) => !x.done), ...found.filter((x) => x.done)].slice(0, 6).map((x) => ({
@@ -2205,8 +2257,6 @@ function renderPalette() {
     ['views', items.filter((c) => c.group === 'views')],
     ['tasks', tasks],
   ];
-  palEmpty.hidden = Boolean(items.length || tasks.length) || !words.length;
-  palEmpty.textContent = palEmpty.hidden ? '' : t('palette.empty');
   // ничего не нашлось или нашлось: последней строкой «Новая задача: …»
   if (words.length) groups.push(['create', [{ group: 'create', id: 'create', label: t('palette.create', { title: raw }), icon: 'plus', run: () => fillComposer(raw) }]]);
   palItems = [];
@@ -2307,7 +2357,9 @@ palette.addEventListener('click', (e) => {
 function jumpToTask(id) {
   const todo = todos.find((x) => x.id === id);
   if (!todo) return;
-  const target = todo.done ? 'done' : 'all';
+  // задача видна в текущем разделе: остаёмся в нём
+  const here = !query && inView(todo, view, todayKey(), dayKeyOf);
+  const target = here ? view : todo.done ? 'done' : 'all';
   pendingTask = id;
   if (view === target && !query) focusTask();
   else if (view === target) setQuery('');
@@ -2499,7 +2551,7 @@ const launched = launchAction(location.href);
 if (launched.action === 'new') {
   history.replaceState(null, '', launched.cleanHref);
   input.focus();
-} else if (finePointer() && document.activeElement === document.body) input.focus();
+} else if (finePointer() && !todos.length && document.activeElement === document.body) input.focus();
 
 // Работа без интернета: страница и скрипты сохраняются после первого визита.
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {

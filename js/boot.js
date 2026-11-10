@@ -8,7 +8,10 @@
     settings = {};
   }
   var root = document.documentElement;
-  root.dataset.theme = settings.theme === 'dark' ? 'dark' : 'light';
+  // тема выбрана кнопкой или, пока не выбрана, как в системе
+  var theme = settings.theme === 'dark' || settings.theme === 'light' ? settings.theme
+    : (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  root.dataset.theme = theme;
   // цвет верхней полосы браузера на телефоне = --surface темы (css/theme.css)
   var BAR = { light: '#ffffff', dark: '#151921' };
   var meta = document.querySelector('meta[name="theme-color"]');
@@ -33,6 +36,10 @@
     }
   }
   root.lang = lang;
+  // раздел из адреса до загрузки app.js: «Сегодня» сразу раскладывается в итоговую сетку,
+  // и шапка дня не сдвигает поле ввода, когда скрипт дорисует её (CLS)
+  var hash = location.hash;
+  root.dataset.boot = !hash || hash === '#/' || hash === '#/today' ? 'today' : 'other';
   // разметка написана по-русски: английскому читателю прячем её до перевода
   if (lang === 'en') root.classList.add('i18n-pending');
 }());

@@ -80,7 +80,7 @@ test('из списка берутся только валидные задач�
 test('запрещённое хранилище: пустой список и сигнал о неудаче записи', () => {
   assert.deepEqual(loadTodos(brokenStorage), []);
   assert.equal(saveTodos([full('a')], brokenStorage), false);
-  assert.deepEqual(loadSettings(brokenStorage), { lang: null, theme: 'light', sort: 'manual', planFolded: false, closedDay: null });
+  assert.deepEqual(loadSettings(brokenStorage), { lang: null, theme: null, sort: 'manual', planFolded: false, closedDay: null });
   assert.equal(saveSettings({}, brokenStorage), false);
   assert.equal(storageAvailable(brokenStorage), false);
   assert.equal(storageAvailable(memoryStorage()), true);
@@ -96,7 +96,7 @@ test('запрет на само обращение к localStorage (Chrome бе
     assert.deepEqual(loadTodos(), []);
     assert.equal(saveTodos([]), false);
     assert.equal(storageAvailable(), false);
-    assert.deepEqual(loadSettings(), { lang: null, theme: 'light', sort: 'manual', planFolded: false, closedDay: null });
+    assert.deepEqual(loadSettings(), { lang: null, theme: null, sort: 'manual', planFolded: false, closedDay: null });
   } finally {
     if (original) Object.defineProperty(globalThis, 'localStorage', original);
     else delete globalThis.localStorage;
@@ -105,12 +105,12 @@ test('запрет на само обращение к localStorage (Chrome бе
 
 test('настройки: неизвестные значения заменяются на значения по умолчанию', () => {
   assert.deepEqual(parseSettings('{"lang":"en","theme":"dark","sort":"due"}'), { lang: 'en', theme: 'dark', sort: 'due', planFolded: false, closedDay: null });
-  assert.deepEqual(parseSettings('{"lang":"de","theme":"pink","sort":"x"}'), { lang: null, theme: 'light', sort: 'manual', planFolded: false, closedDay: null });
+  assert.deepEqual(parseSettings('{"lang":"de","theme":"pink","sort":"x"}'), { lang: null, theme: null, sort: 'manual', planFolded: false, closedDay: null });
   assert.deepEqual(parseSettings('{"planFolded":true,"closedDay":"2026-11-11"}'),
-    { lang: null, theme: 'light', sort: 'manual', planFolded: true, closedDay: '2026-11-11' });
+    { lang: null, theme: null, sort: 'manual', planFolded: true, closedDay: '2026-11-11' });
   assert.deepEqual(parseSettings('{"planFolded":"yes","closedDay":"вчера"}'),
-    { lang: null, theme: 'light', sort: 'manual', planFolded: false, closedDay: null });
-  assert.deepEqual(parseSettings('мусор'), { lang: null, theme: 'light', sort: 'manual', planFolded: false, closedDay: null });
+    { lang: null, theme: null, sort: 'manual', planFolded: false, closedDay: null });
+  assert.deepEqual(parseSettings('мусор'), { lang: null, theme: null, sort: 'manual', planFolded: false, closedDay: null });
 });
 
 test('экспорт и импорт: файл читается обратно, совпадающие id заменяются', () => {

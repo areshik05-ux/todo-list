@@ -365,3 +365,30 @@ export function groupDoneByDay(todos, dayKeyOf) {
   }
   return groups;
 }
+
+// Строка дня в «Сегодня»: список [ключ текста, параметры], первая подходящая ветка.
+// all: всего задач, open: открытых по сегодня, done/total: прогресс дня,
+// suggestions: сколько можно взять на сегодня, week: сделано за неделю,
+// restMoved: вечером остальное перенесли на завтра.
+export function dayStatus({ all, open, done, total, suggestions, week, restMoved = false }, full = 6) {
+  if (!all) return [['status.empty', {}]];
+  if (!total) {
+    if (restMoved) return [['status.moved', {}]];
+    return [[suggestions ? 'status.pick' : 'status.free', {}]];
+  }
+  if (done === total) {
+    const parts = [['status.allDone', { done, total }], ['status.rest', {}]];
+    if (week > done) parts.push(['status.week', { n: week }]);
+    return parts;
+  }
+  const base = done ? ['status.progress', { done, total, left: open }] : ['status.planned', { total }];
+  return open >= full ? [base, ['status.full', {}]] : [base];
+}
+
+// Блок «Можно взять на сегодня»: 'hidden' (нечего брать или день полон),
+// 'folded' (день закрыт или остальное перенесено: одна кнопка «Взять ещё»), 'open'.
+export function planMode({ open, closed, suggestions }, { restMoved = false, again = false, full = 6 } = {}) {
+  if (!suggestions || open >= full) return 'hidden';
+  if ((closed || restMoved) && !again) return 'folded';
+  return 'open';
+}

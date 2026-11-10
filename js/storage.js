@@ -170,14 +170,15 @@ export function saveTodos(todos, storage) {
 
 /* Настройки: язык, тема, сортировка, свёрнутые предложения, день, когда оторвали листок */
 
-export const DEFAULT_SETTINGS = { lang: null, theme: 'light', sort: 'manual', planFolded: false, closedDay: null };
+// theme: null, пока человек не выбрал сам: тогда тема как в системе
+export const DEFAULT_SETTINGS = { lang: null, theme: null, sort: 'manual', planFolded: false, closedDay: null };
 
 export function parseSettings(raw) {
   try {
     const data = JSON.parse(raw ?? '{}') ?? {};
     return {
       lang: ['ru', 'en'].includes(data.lang) ? data.lang : null,
-      theme: ['light', 'dark'].includes(data.theme) ? data.theme : 'light',
+      theme: ['light', 'dark'].includes(data.theme) ? data.theme : null,
       sort: ['manual', 'due', 'priority'].includes(data.sort) ? data.sort : 'manual',
       planFolded: data.planFolded === true,
       closedDay: isDateKey(data.closedDay) ? data.closedDay : null,
