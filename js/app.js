@@ -697,7 +697,8 @@ function applyLanguage() {
 
 function setBrandDate() {
   $('#today-date').textContent = i18n.longDate(new Date());
-  $('#today-date-short').textContent = i18n.shortDate(todayKey());
+  // листок календаря у названия: сегодняшнее число, завтра будет следующее
+  $('#day-num').textContent = String(new Date().getDate());
 }
 
 function applyTheme() {

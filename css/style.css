@@ -210,17 +210,68 @@ kbd {
   font: 650 17px/24px var(--font-display);
 }
 
-.brand-date .date-short {
-  display: none;
+/* Знак приложения: листок календаря с сегодняшним числом.
+   Полная дата есть в шапке «Сегодня», здесь её слышит только экранный диктор. */
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
-@media (max-width: 479px) {
-  .brand-date .date-long { display: none; }
-  .brand-date .date-short { display: inline; }
+.brand-date {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
-@media (max-width: 359px) {
-  .brand-date { display: none; }
+.day-leaf {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding-top: 7px;
+  border: 2px solid var(--accent-ink);
+  border-radius: var(--r-sm);
+  color: var(--accent-ink);
+  font: 700 14px/1 var(--font-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.day-leaf::before {
+  content: "";
+  position: absolute;
+  top: 6px;
+  right: 0;
+  left: 0;
+  border-top: 2px solid;
+}
+
+.day-leaf::after {
+  content: "";
+  position: absolute;
+  top: -5px;
+  left: 6px;
+  width: 2px;
+  height: 6px;
+  border-radius: 1px;
+  background: currentColor;
+  box-shadow: 10px 0 currentColor;
+}
+
+@media (max-width: 349px) {
+  /* на самых узких экранах знаком остаётся один листок */
+  .brand-name {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
 }
 
 .brand-date {
@@ -1010,16 +1061,25 @@ h1 {
   transition: background-color var(--dur-1) var(--ease-in), border-color var(--dur-1) var(--ease-in), transform var(--dur-1) var(--ease-in);
 }
 
+/* галочка выходит за кольцо, как росчерк ручкой в бумажном списке */
+.check-box {
+  position: relative;
+}
+
 .check-box .icon {
-  width: 16px;
-  height: 16px;
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  width: 22px;
+  height: 22px;
+  overflow: visible;
   stroke-width: 2.2;
 }
 
 .check-path {
-  stroke-dasharray: 18;
-  stroke-dashoffset: 18;
-  transition: stroke-dashoffset var(--dur-2) var(--ease-out) var(--dur-1);
+  stroke-dasharray: 23;
+  stroke-dashoffset: 23;
+  transition: stroke-dashoffset var(--dur-3) var(--ease-out) var(--dur-1);
 }
 
 .check:hover .check-box {
@@ -1033,8 +1093,12 @@ h1 {
 
 .todo-check:checked + .check-box {
   border-color: var(--accent);
-  background: var(--accent);
+  color: var(--accent);
   animation: check-press 300ms var(--ease-out);
+}
+
+.check:hover .todo-check:checked + .check-box {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 .todo-check:checked + .check-box .check-path {
