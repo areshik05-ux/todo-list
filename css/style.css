@@ -2598,7 +2598,7 @@ button.meta-due[aria-expanded="true"] {
   max-width: 600px;
 }
 
-.list-wrap:not(:empty) + .empty,
+.list-wrap:not(:empty) ~ .empty,
 .plan-zone:has(> :not([hidden])) + .empty {
   margin-top: 32px;
 }
