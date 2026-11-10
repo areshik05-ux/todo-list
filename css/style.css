@@ -109,7 +109,8 @@ p {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
   color: inherit;
 }
@@ -207,6 +208,15 @@ kbd {
 
 .brand-name {
   font: 650 17px/24px var(--font-display);
+}
+
+.brand-date .date-short {
+  display: none;
+}
+
+@media (max-width: 479px) {
+  .brand-date .date-long { display: none; }
+  .brand-date .date-short { display: inline; }
 }
 
 .brand-date {
@@ -688,7 +698,7 @@ h1 {
   .search input,
   .select select { height: 40px; }
   .key-hint,
-  #help-btn { display: none; }
+  .help-keys { display: none; }
 }
 
 /* Быстрое добавление */
@@ -872,7 +882,7 @@ h1 {
 }
 
 .group-title.is-overdue {
-  color: var(--danger);
+  color: var(--text);
 }
 
 .group-count {
@@ -1067,6 +1077,19 @@ h1 {
   height: 14px;
 }
 
+button.meta-due {
+  min-height: 24px;
+  margin: -3px -6px;
+  padding: 0 6px;
+  border-radius: var(--r-sm);
+  font-size: 13px;
+}
+
+button.meta-due:hover,
+button.meta-due[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
 .meta-due.is-today {
   color: var(--accent-ink);
 }
@@ -1105,9 +1128,6 @@ h1 {
   height: 18px;
 }
 
-.todo-delete:hover {
-  color: var(--danger);
-}
 
 /* На компьютере кнопки строки появляются при наведении и фокусе, на телефоне видны всегда */
 @media (hover: hover) and (pointer: fine) {
@@ -1192,6 +1212,10 @@ h1 {
   color: var(--text-3);
 }
 
+.field-note:not(:empty)::before {
+  content: "· ";
+}
+
 .field input,
 .field select {
   width: 100%;
@@ -1224,8 +1248,359 @@ h1 {
 }
 
 @media (min-width: 640px) {
-  .editor-row { grid-template-columns: 170px 130px 1fr; }
-  .field-tags { grid-column: auto; }
+  .editor-row { grid-template-columns: 160px minmax(140px, 1fr) 110px; }
+}
+
+/* Повтор, шаги и заметка в строке */
+
+.meta-repeat .icon {
+  color: var(--text-3);
+}
+
+.meta-details {
+  min-height: 24px;
+  margin: -3px -6px;
+  padding: 0 6px;
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.meta-details:hover {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  color: var(--text);
+}
+
+.meta-details.is-complete {
+  color: var(--accent-ink);
+}
+
+.meta-chevron {
+  transition: transform var(--dur-1) var(--ease-out);
+}
+
+.meta-details[aria-expanded="true"] .meta-chevron {
+  transform: rotate(180deg);
+}
+
+.todo-details {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+  animation: details-in var(--dur-2) var(--ease-out);
+}
+
+@keyframes details-in {
+  from { opacity: 0; transform: translateY(-4px); }
+}
+
+.todo-notes {
+  max-width: 65ch;
+  padding-left: 10px;
+  border-left: 2px solid var(--line-strong);
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 20px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.steps {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step label {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: var(--hit);
+  padding: 4px 0;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.step-check {
+  position: absolute;
+  top: 0;
+  left: -6px;
+  width: var(--hit);
+  height: var(--hit);
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.step-box {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  border: 1.5px solid var(--ctrl);
+  border-radius: 5px;
+  color: var(--on-accent);
+  transition: background-color var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out);
+}
+
+.step-icon {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2.4;
+  opacity: 0;
+}
+
+.step-check:checked + .step-box {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.step-check:checked + .step-box .step-icon {
+  opacity: 1;
+}
+
+.step-check:focus-visible + .step-box {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.step label:hover .step-box {
+  border-color: var(--text-2);
+}
+
+.step-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.step.is-done .step-text {
+  color: var(--text-3);
+  text-decoration: line-through 1px var(--text-3);
+}
+
+/* Просроченное: заголовок группы с кнопкой переноса */
+
+.group-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0 12px;
+}
+
+.group-head .group-title {
+  padding-right: 0;
+}
+
+.group-action {
+  min-height: var(--hit);
+  padding: 0 8px;
+  color: var(--accent-ink);
+  text-decoration-color: color-mix(in srgb, var(--accent-ink) 40%, transparent);
+}
+
+.group-action:hover {
+  color: var(--accent-hover);
+}
+
+/* Строка про примеры */
+
+.samples-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin-top: 12px;
+  padding: 6px 6px 6px 12px;
+  border-radius: var(--r-md);
+  background: var(--tint);
+  color: var(--text-2);
+  font-size: 14px;
+}
+
+.samples-bar .link-btn {
+  padding: 0 6px;
+  color: var(--accent-ink);
+  text-decoration-color: color-mix(in srgb, var(--accent-ink) 40%, transparent);
+}
+
+.samples-bar .link-btn:hover {
+  color: var(--accent-hover);
+}
+
+/* Новый шаг прямо в списке */
+
+.step-add-inline {
+  max-width: 420px;
+}
+
+.step-add-inline input {
+  width: 100%;
+  height: var(--hit);
+  padding: 0 8px 0 30px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-sm);
+  background: transparent;
+  font-size: 14px;
+}
+
+.step-add-inline .icon {
+  left: 8px;
+  width: 14px;
+  height: 14px;
+}
+
+.step-add-inline input:focus {
+  border-style: solid;
+  border-color: var(--focus);
+  outline: 2px solid var(--focus);
+  outline-offset: 0;
+  background: var(--surface);
+}
+
+@media (pointer: coarse) {
+  .step-add-inline input { font-size: 16px; }
+}
+
+/* Меню строки */
+
+.row-menu {
+  position: fixed;
+  z-index: 25;
+  display: grid;
+  width: max-content;
+  min-width: 220px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-overlay);
+  animation: menu-in var(--dur-1) var(--ease-out);
+}
+
+@keyframes menu-in {
+  from { opacity: 0; transform: translateY(-2px); }
+}
+
+.row-menu .menu-item:focus-visible {
+  outline-offset: -2px;
+}
+
+.row-menu .menu-item {
+  gap: 10px;
+}
+
+.menu-label {
+  flex: 1;
+}
+
+.menu-hint {
+  color: var(--text-3);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.menu-hint:empty {
+  display: none;
+}
+
+.menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--line);
+}
+
+.menu-danger,
+.menu-danger .icon {
+  color: var(--danger);
+}
+
+/* Шаги и заметка в редакторе */
+
+.steps-edit {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.step-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step-list:empty {
+  display: none;
+}
+
+.step-edit {
+  display: grid;
+  grid-template-columns: var(--hit) minmax(0, 1fr) var(--hit);
+  align-items: center;
+  gap: 4px;
+}
+
+.step-edit .step-done {
+  justify-self: center;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.field .step-title,
+.field .step-new {
+  height: 36px;
+}
+
+.step-add {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.step-add .icon {
+  position: absolute;
+  left: 10px;
+  width: 16px;
+  height: 16px;
+  color: var(--text-3);
+  pointer-events: none;
+}
+
+.field .step-new {
+  padding-left: 34px;
+  border-style: dashed;
+}
+
+.field .step-new:focus {
+  border-style: solid;
+}
+
+.field textarea {
+  width: 100%;
+  min-height: 72px;
+  padding: 8px 10px;
+  border: 1px solid var(--field);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  font-size: 16px;
+  line-height: 22px;
+  resize: vertical;
+}
+
+.field textarea:focus {
+  border-color: var(--focus);
+  outline: 2px solid var(--focus);
+  outline-offset: 0;
 }
 
 /* Пустые состояния и подвал */
@@ -1388,6 +1763,44 @@ h1 {
 
 .dialog h2 {
   font: 650 20px/28px var(--font-display);
+}
+
+.dialog-sub {
+  margin: 16px 0 4px;
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.dialog-head + .dialog-sub {
+  margin-top: 0;
+}
+
+.quick {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.quick div {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 12px;
+  font-size: 14px;
+}
+
+.quick dt {
+  color: var(--text-2);
+}
+
+.quick dd {
+  margin: 0;
+}
+
+.dialog-note {
+  margin-top: 8px;
+  color: var(--text-2);
+  font-size: 13px;
 }
 
 .keys {

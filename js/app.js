@@ -1,13 +1,16 @@
 import {
-  addTodo, toggleTodo, updateTodo, removeTodo, clearCompleted, moveTodo, moveTodoAfter, moveWithin,
+  addTodo, toggleTodo, completeTodo, updateTodo, removeTodo, clearCompleted, moveTodo, moveTodoAfter, moveWithin,
+  toggleStep, stepProgress, rescheduleOverdue, addSteps, removeSamples, MAX_STEPS,
   inView, countViews, todayProgress, matchesQuery, sortTodos, sortDone, VIEWS,
 } from './todos.js';
 import {
-  loadTodos, saveTodos, loadSettings, saveSettings, exportJSON, importJSON, storageAvailable, STORAGE_KEY, SETTINGS_KEY,
+  loadTodos, saveTodos, loadSettings, saveSettings, exportJSON, importJSON, storageAvailable, isFirstVisit,
+  STORAGE_KEY, SETTINGS_KEY,
 } from './storage.js';
 import { parseQuickAdd, splitTags } from './parse.js';
-import { todayKey, toKey, addDays } from './dates.js';
+import { todayKey, toKey, fromKey, addDays, nextMonday, daysBetween } from './dates.js';
 import { createI18n, detectLang } from './i18n.js';
+import { sampleTodos } from './samples.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -36,17 +39,27 @@ const themeBtn = $('#theme-btn');
 const helpBtn = $('#help-btn');
 const todoTemplate = $('#todo-template');
 const editorTemplate = $('#editor-template');
+const stepEditTemplate = $('#step-edit-template');
+const rowMenu = $('#row-menu');
+const samplesBar = $('#samples-bar');
 
 const LINGER_MS = 700; // столько отмеченная задача остаётся на месте, прежде чем уйти в «Готово»
 const LEAVE_MS = 240;
 const TOAST_MS = 6000;
 const MAX_IMPORT_BYTES = 2_000_000;
 
+const firstVisit = isFirstVisit();
 let todos = loadTodos();
 const settings = loadSettings();
 settings.lang ??= detectLang();
 let i18n = createI18n(settings.lang);
 const t = (...args) => i18n.t(...args);
+
+// Первый визит: вместо пустого экрана несколько задач-подсказок.
+if (firstVisit && !todos.length) {
+  todos = sampleTodos(t, todayKey());
+  saveTodos(todos);
+}
 
 let view = viewFromHash();
 let query = '';
@@ -57,6 +70,8 @@ let undo = null; // { snapshot, timer }
 let dragEnabled = false;
 let renderedDay = todayKey();
 const lingering = new Map(); // id → таймер
+const openDetails = new Set(); // задачи, у которых раскрыты шаги и заметка
+let menu = null; // { id, opener } открытого меню строки
 
 /* Состояние */
 
@@ -149,9 +164,7 @@ function render(focus = currentFocus()) {
 
   const progress = todayProgress(todos, today, dayKeyOf);
   $('#progress-block').hidden = progress.total === 0;
-  $('#progress-text').textContent = progress.done === progress.total
-    ? `${t('progress.all')}: ${progress.done} / ${progress.total}`
-    : t('progress.label', progress);
+  $('#progress-text').textContent = t(progress.done === progress.total ? 'progress.allCount' : 'progress.label', progress);
   $('#progress').max = Math.max(progress.total, 1);
   $('#progress').value = progress.done;
 
@@ -189,7 +202,20 @@ function render(focus = currentFocus()) {
       sep.textContent = ': ';
       h.append(sep, n);
       ul.setAttribute('aria-labelledby', h.id);
-      nodes.push(h);
+      if (group.overdue) {
+        // группа с кнопкой: заголовок отдельно, кнопка рядом, а не внутри h2
+        const head = document.createElement('div');
+        head.className = 'group-head';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'link-btn group-action';
+        btn.id = 'move-today';
+        btn.textContent = t('overdue.moveAll');
+        head.append(h, btn);
+        nodes.push(head);
+      } else {
+        nodes.push(h);
+      }
     }
     ul.append(...group.items.map((todo) => renderItem(todo, today)));
     nodes.push(ul);
@@ -199,7 +225,11 @@ function render(focus = currentFocus()) {
   empty.hidden = total > 0;
   emptyText.textContent = todos.length === 0 ? t('empty.first')
     : query ? t('empty.search', { q: query })
-      : t(`empty.${view}`);
+      : view === 'today' ? (progress.done ? t('empty.todayDone', { n: progress.done }) : t('empty.todayNone'))
+        : t(`empty.${view}`);
+
+  // строка «Это примеры… Убрать примеры», пока примеры с первого визита на месте
+  samplesBar.hidden = query !== '' || !(view === 'all' || view === 'today') || !todos.some((todo) => todo.sample);
 
   clearDoneBtn.hidden = !(view === 'done' && counts.done > 0 && !query);
   sortSelect.value = settings.sort;
@@ -252,11 +282,12 @@ function renderItem(todo, today) {
   check.checked = todo.done;
   check.setAttribute('aria-label', todo.title);
 
-  for (const [sel, key] of [['.todo-edit', 'edit'], ['.todo-delete', 'delete']]) {
+  for (const [sel, key] of [['.todo-edit', 'edit'], ['.todo-more', 'more']]) {
     const btn = $(sel, li);
     btn.setAttribute('aria-label', t(`task.${key}Label`, { title: todo.title }));
     btn.title = t(`task.${key}`);
   }
+  if (menu?.id === todo.id) $('.todo-more', li).setAttribute('aria-expanded', 'true');
 
   const body = $('.todo-body', li);
   if (editingId === todo.id) {
@@ -268,8 +299,10 @@ function renderItem(todo, today) {
   highlight($('.todo-title', li), todo.title);
   const meta = $('.todo-meta', li);
 
+  // порядок в строке: срок, повтор, шаги, приоритет, метки
   if (todo.due) {
-    const due = document.createElement('span');
+    // у открытой задачи срок кнопкой: нажал и перенёс, без редактора
+    const due = document.createElement(todo.done ? 'span' : 'button');
     due.className = 'meta-item meta-due';
     const overdue = !todo.done && todo.due < today;
     due.classList.toggle('is-overdue', overdue);
@@ -277,15 +310,33 @@ function renderItem(todo, today) {
     const label = document.createElement('span');
     label.textContent = i18n.relativeDate(todo.due, today);
     due.append(svgIcon('calendar'), label);
-    if (overdue) {
-      const note = document.createElement('span');
-      note.className = 'visually-hidden';
-      note.textContent = `, ${t('task.overdue')}`;
-      due.append(note);
+    if (todo.done) {
+      due.title = i18n.groupDate(todo.due, today);
+    } else {
+      due.type = 'button';
+      due.setAttribute('aria-haspopup', 'menu');
+      due.setAttribute('aria-expanded', String(menu?.id === todo.id));
+      due.setAttribute('aria-controls', 'row-menu');
+      const date = i18n.groupDate(todo.due, today);
+      due.setAttribute('aria-label', t('task.dueButton', { date }) + (overdue ? `, ${t('task.overdue')}` : ''));
+      due.title = t('task.dueButton', { date });
     }
-    due.title = i18n.groupDate(todo.due, today);
     meta.append(due);
   }
+
+  if (todo.repeat) {
+    const rep = document.createElement('span');
+    rep.className = 'meta-item meta-repeat';
+    const sr = document.createElement('span');
+    sr.className = 'visually-hidden';
+    sr.textContent = `${t('task.repeats')} `;
+    const text = document.createElement('span');
+    text.textContent = repeatLabel(todo.repeat, todo.due);
+    rep.append(svgIcon('repeat'), sr, text);
+    meta.append(rep);
+  }
+
+  if (todo.steps.length || todo.notes) meta.append(renderDetailsToggle(todo));
 
   if (todo.priority) {
     const pr = document.createElement('span');
@@ -310,7 +361,95 @@ function renderItem(todo, today) {
     meta.append(btn);
   }
 
+  if (openDetails.has(todo.id) && (todo.steps.length || todo.notes)) body.append(renderDetails(todo));
+
   return li;
+}
+
+// Кнопка «шаги 1/3» (или значок заметки): раскрывает шаги и заметку под задачей.
+function renderDetailsToggle(todo) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'meta-item meta-details';
+  btn.setAttribute('aria-expanded', String(openDetails.has(todo.id)));
+  btn.setAttribute('aria-controls', `details-${todo.id}`);
+  const { done, total } = stepProgress(todo);
+  const label = total ? t('steps.toggle', { done, total }) : t('steps.noteToggle');
+  btn.setAttribute('aria-label', todo.notes && total ? `${label}, ${t('task.hasNote')}` : label);
+  if (total) {
+    btn.classList.toggle('is-complete', done === total);
+    const text = document.createElement('span');
+    text.textContent = `${done}/${total}`;
+    btn.append(svgIcon('steps'), text);
+  }
+  if (todo.notes) btn.append(svgIcon('note'));
+  btn.append(svgIcon('chevron', 'icon meta-chevron'));
+  return btn;
+}
+
+function renderDetails(todo) {
+  const box = document.createElement('div');
+  box.className = 'todo-details';
+  box.id = `details-${todo.id}`;
+  if (todo.steps.length) {
+    const ul = document.createElement('ul');
+    ul.className = 'steps';
+    ul.setAttribute('aria-label', t('editor.steps'));
+    for (const step of todo.steps) {
+      const item = document.createElement('li');
+      item.className = 'step';
+      item.classList.toggle('is-done', step.done);
+      const label = document.createElement('label');
+      const box2 = document.createElement('input');
+      box2.type = 'checkbox';
+      box2.className = 'step-check';
+      box2.dataset.step = step.id;
+      box2.checked = step.done;
+      const mark = document.createElement('span');
+      mark.className = 'step-box';
+      mark.setAttribute('aria-hidden', 'true');
+      mark.append(svgIcon('check', 'icon step-icon'));
+      const text = document.createElement('span');
+      text.className = 'step-text';
+      text.textContent = step.title;
+      label.append(box2, mark, text);
+      item.append(label);
+      ul.append(item);
+    }
+    box.append(ul);
+  }
+  // новый шаг прямо в списке: Enter добавляет и оставляет курсор для следующего
+  if (!todo.done && todo.steps.length < MAX_STEPS) {
+    const add = document.createElement('div');
+    add.className = 'step-add step-add-inline';
+    const field = document.createElement('input');
+    field.type = 'text';
+    field.className = 'details-step-new';
+    field.maxLength = 200;
+    field.enterKeyHint = 'enter';
+    field.placeholder = t('steps.add');
+    field.setAttribute('aria-label', t('steps.addLabel', { title: todo.title }));
+    add.append(svgIcon('plus'), field);
+    box.append(add);
+  }
+  if (todo.notes) {
+    const note = document.createElement('p');
+    note.className = 'todo-notes';
+    note.textContent = todo.notes;
+    box.append(note);
+  }
+  return box;
+}
+
+function repeatLabel(repeat, due) {
+  return repeat === 'week' && due ? t(`repeat.on${fromKey(due).getDay()}`) : t(`repeat.${repeat}`);
+}
+
+function addStepsInline(field, text) {
+  const id = field.closest('.todo').dataset.id;
+  const next = addSteps(todos, id, text);
+  if (next === todos) return;
+  commit(next, { focus: { id, selector: '.details-step-new' } });
 }
 
 function renderEditor(todo) {
@@ -320,7 +459,53 @@ function renderEditor(todo) {
   editor.elements.due.value = todo.due ?? '';
   editor.elements.priority.value = String(todo.priority);
   editor.elements.tags.value = todo.tags.join(' ');
+  editor.elements.repeat.value = todo.repeat ?? '';
+  editor.elements.notes.value = todo.notes;
+  $('.step-list', editor).append(...todo.steps.map((step) => stepEditRow(step)));
+  numberSteps(editor);
   return editor;
+}
+
+function stepEditRow(step) {
+  const row = stepEditTemplate.content.firstElementChild.cloneNode(true);
+  if (step.id) row.dataset.id = step.id;
+  $('.step-done', row).checked = step.done;
+  $('.step-title', row).value = step.title;
+  return row;
+}
+
+// Подписи шагов для скринридера: «Шаг 2», «Удалить шаг 2».
+function numberSteps(editor) {
+  $$('.step-edit', editor).forEach((row, i) => {
+    const n = i + 1;
+    $('.step-title', row).setAttribute('aria-label', t('editor.stepLabel', { n }));
+    $('.step-done', row).setAttribute('aria-label', t('editor.stepDone', { n }));
+    const remove = $('.step-remove', row);
+    remove.setAttribute('aria-label', t('editor.stepRemove', { n }));
+    remove.title = t('editor.stepRemove', { n });
+  });
+}
+
+function readSteps(editor) {
+  const steps = $$('.step-edit', editor).map((row) => ({
+    id: row.dataset.id,
+    title: $('.step-title', row).value,
+    done: $('.step-done', row).checked,
+  }));
+  // набрали шаг, но не нажали Enter: всё равно сохраняем
+  const pending = $('.step-new', editor).value;
+  if (pending.trim()) steps.push({ title: pending, done: false });
+  return steps;
+}
+
+function addStepFromInput(field) {
+  const editor = field.closest('.editor');
+  if (!field.value.trim()) return;
+  const row = stepEditRow({ title: field.value, done: false });
+  row.dataset.id = `new-${Date.now().toString(36)}-${$$('.step-edit', editor).length}`;
+  $('.step-list', editor).append(row);
+  field.value = '';
+  numberSteps(editor);
 }
 
 // После перерисовки возвращаем фокус туда, где был пользователь,
@@ -343,11 +528,12 @@ function focusOf(el, selector = '.todo-check') {
 }
 
 // Перерисовка без явной цели: фокус остаётся на той же кнопке той же задачи.
-const ROW_TARGETS = ['.todo-check', '.handle', '.todo-edit', '.todo-delete', '.meta-tag'];
+const ROW_TARGETS = ['.todo-check', '.handle', '.todo-edit', '.todo-more', '.meta-details', '.meta-tag'];
 
 function currentFocus() {
   const el = document.activeElement;
   if (!el || !listWrap.contains(el) || !el.closest('.todo') || el.closest('.editor')) return undefined;
+  if (el.matches('.step-check')) return focusOf(el, '.step-check[data-step="' + CSS.escape(el.dataset.step) + '"]');
   const selector = ROW_TARGETS.find((sel) => el.matches(sel)) ?? '.todo-check';
   return focusOf(el, selector);
 }
@@ -380,9 +566,14 @@ function applyLanguage() {
     btn.setAttribute('aria-label', t(key));
     btn.title = t(key);
   }
-  $('#today-date').textContent = i18n.longDate(new Date());
+  setBrandDate();
   lastChips = '';
   updateChips();
+}
+
+function setBrandDate() {
+  $('#today-date').textContent = i18n.longDate(new Date());
+  $('#today-date-short').textContent = i18n.shortDate(todayKey());
 }
 
 function applyTheme() {
@@ -398,25 +589,27 @@ function currentParse() {
   return parseQuickAdd(input.value, todayKey(), { ignore: ignoreTokens });
 }
 
-function chipText(token, today) {
+function chipText(token, today, due) {
   if (token.type === 'date') return i18n.groupDate(token.value, today);
   if (token.type === 'priority') return `P${token.value}`;
+  if (token.type === 'repeat') return repeatLabel(token.value, due);
   return token.value;
 }
 
 function updateChips() {
   const today = todayKey();
-  const { tokens } = currentParse();
-  const key = JSON.stringify([settings.lang, tokens]);
+  const parsed = currentParse();
+  const { tokens } = parsed;
+  const key = JSON.stringify([settings.lang, tokens, parsed.due]);
   if (key === lastChips) return;
   lastChips = key;
   chips.replaceChildren(...tokens.map((token) => {
     const chip = document.createElement('span');
     chip.className = 'chip';
-    const icon = { date: 'calendar', priority: 'flag', tag: 'hash' }[token.type];
+    const icon = { date: 'calendar', priority: 'flag', tag: 'hash', repeat: 'repeat' }[token.type];
     if (token.type === 'priority') chip.classList.add(`p${token.value}`);
     const text = document.createElement('span');
-    text.textContent = chipText(token, today);
+    text.textContent = chipText(token, today, parsed.due);
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.className = 'chip-remove';
@@ -482,13 +675,152 @@ function toggle(li) {
     // сняли галочку, пока задача ещё не ушла: она остаётся на месте
     clearTimeout(lingering.get(id));
     lingering.delete(id);
-  } else if (hidesDone) {
+    commit(toggleTodo(todos, id), { focus });
+    return;
+  }
+  if (hidesDone) {
     clearTimeout(lingering.get(id));
     lingering.set(id, setTimeout(() => leave(id), LINGER_MS));
   }
-  commit(toggleTodo(todos, id), { focus });
-  if (!before.done) showToast(t('toast.completed', { title: before.title }), { snapshot, focus: { id, selector: '.todo-check' } });
+  const today = todayKey();
+  const result = completeTodo(todos, id, today);
+  commit(result.todos, { focus });
+  const message = result.next
+    ? t('toast.completedNext', { title: before.title, when: whenText(result.next.due, today) })
+    : t('toast.completed', { title: before.title });
+  showToast(message, { snapshot, focus: { id, selector: '.todo-check' } });
 }
+
+// «завтра», «Пн, 16 нояб.» для сообщений о сроке.
+function whenText(due, today) {
+  const diff = daysBetween(today, due);
+  if (diff === 0) return t('date.today').toLowerCase();
+  if (diff === 1) return t('date.tomorrow').toLowerCase();
+  return i18n.groupDate(due, today);
+}
+
+// Перенести одну задачу (меню строки, клавиши T и M) или все просроченные.
+function reschedule(id, due, focus) {
+  const todo = todos.find((x) => x.id === id);
+  if (!todo || todo.done || todo.due === due) return;
+  const snapshot = todos;
+  commit(updateTodo(todos, id, { due }), { focus });
+  const message = due
+    ? t('toast.rescheduled', { when: whenText(due, todayKey()), title: todo.title })
+    : t('toast.undated', { title: todo.title });
+  showToast(message, { snapshot, focus: { id, selector: '.todo-check' } });
+}
+
+function moveOverdueToToday() {
+  const today = todayKey();
+  const n = todos.filter((x) => !x.done && x.due !== null && x.due < today).length;
+  if (!n) return;
+  const snapshot = todos;
+  commit(rescheduleOverdue(todos, today), { focus: $('#view-title') });
+  showToast(t('toast.movedToday', { n }), { snapshot, focus: $('#view-title') });
+}
+
+const DUE_ACTIONS = {
+  today: (today) => today,
+  tomorrow: (today) => addDays(today, 1),
+  nextWeek: (today) => nextMonday(today),
+  noDate: () => null,
+};
+
+/* Меню строки: срок и удаление */
+
+function openMenu(opener) {
+  const li = opener.closest('.todo');
+  if (menu?.id === li.dataset.id) return closeMenu(true);
+  closeMenu(false);
+  menu = { id: li.dataset.id, opener };
+  opener.setAttribute('aria-expanded', 'true');
+  rowMenu.setAttribute('aria-label', opener.getAttribute('aria-label'));
+  const todo = todos.find((x) => x.id === menu.id);
+  const today = todayKey();
+  for (const item of $$('[data-action]', rowMenu)) {
+    const { action } = item.dataset;
+    const due = DUE_ACTIONS[action]?.(today);
+    const hint = $('.menu-hint', item);
+    if (hint) hint.textContent = due ? i18n.shortDate(due) : '';
+    // для сделанной задачи перенос не нужен; вариант, равный текущему сроку, тоже
+    item.hidden = (action !== 'delete' && (todo?.done ?? false)) || (due !== undefined && due === todo?.due);
+  }
+  $('.menu-sep', rowMenu).hidden = todo?.done ?? false;
+  rowMenu.hidden = false;
+  placeMenu();
+  $$('[data-action]:not([hidden])', rowMenu)[0]?.focus();
+}
+
+function placeMenu() {
+  if (!menu) return;
+  const r = menu.opener.getBoundingClientRect();
+  const w = rowMenu.offsetWidth;
+  const h = rowMenu.offsetHeight;
+  // от срока меню открывается вправо, от кнопки «ещё» влево
+  const anchor = menu.opener.matches('.meta-due') ? r.left - 6 : r.right - w;
+  const left = Math.max(8, Math.min(anchor, innerWidth - w - 8));
+  const below = r.bottom + 4 + h <= innerHeight - 8;
+  const top = below ? r.bottom + 4 : Math.max(8, r.top - h - 4);
+  rowMenu.style.left = `${left}px`;
+  rowMenu.style.top = `${top}px`;
+}
+
+function closeMenu(returnFocus) {
+  if (!menu) return;
+  const { opener, id } = menu;
+  menu = null;
+  rowMenu.hidden = true;
+  const current = opener.isConnected ? opener
+    : listWrap.querySelector(`.todo[data-id="${CSS.escape(id)}"] .todo-more`);
+  current?.setAttribute('aria-expanded', 'false');
+  if (returnFocus) current?.focus();
+}
+
+rowMenu.addEventListener('click', (e) => {
+  const item = e.target.closest('[data-action]');
+  if (!item || !menu) return;
+  const { id } = menu;
+  const li = listWrap.querySelector(`.todo[data-id="${CSS.escape(id)}"]`);
+  closeMenu(false);
+  if (!li) return;
+  if (item.dataset.action === 'delete') {
+    remove(li);
+    return;
+  }
+  if (item.dataset.action === 'pick') {
+    startEditing(li, 'input[name="due"]');
+    return;
+  }
+  const index = $$('.todo', listWrap).indexOf(li);
+  reschedule(id, DUE_ACTIONS[item.dataset.action](todayKey()), { id, selector: '.todo-more', index });
+});
+
+rowMenu.addEventListener('keydown', (e) => {
+  const items = $$('[data-action]:not([hidden])', rowMenu);
+  const at = items.indexOf(document.activeElement);
+  let next = null;
+  if (e.key === 'ArrowDown') next = items[(at + 1) % items.length];
+  else if (e.key === 'ArrowUp') next = items[(at - 1 + items.length) % items.length];
+  else if (e.key === 'Home') next = items[0];
+  else if (e.key === 'End') next = items.at(-1);
+  else if (e.key === 'Escape' || e.key === 'Tab') {
+    e.preventDefault();
+    e.stopPropagation();
+    closeMenu(true);
+    return;
+  }
+  if (next) {
+    e.preventDefault();
+    next.focus();
+  }
+});
+
+document.addEventListener('pointerdown', (e) => {
+  if (menu && !rowMenu.contains(e.target) && !menu.opener.contains(e.target)) closeMenu(false);
+});
+window.addEventListener('resize', () => closeMenu(false));
+document.addEventListener('scroll', () => closeMenu(false), { passive: true });
 
 // Отмеченная задача немного стоит на месте с галочкой и только потом уходит.
 function leave(id) {
@@ -514,12 +846,12 @@ function remove(li) {
   showToast(t('toast.deleted', { title: todo.title }), { snapshot, focus: { id, selector: '.todo-check', index } });
 }
 
-function startEditing(li) {
+function startEditing(li, selector = 'input[name="title"]') {
   if (editingId === li.dataset.id) return;
   editingId = li.dataset.id;
-  render({ id: editingId, selector: 'input[name="title"]' });
+  render({ id: editingId, selector });
   const field = $('.is-editing input[name="title"]', listWrap);
-  field?.setSelectionRange(field.value.length, field.value.length);
+  if (document.activeElement === field) field.setSelectionRange(field.value.length, field.value.length);
 }
 
 // Список с правкой из открытого редактора; тот же массив, если ничего не поменяли.
@@ -532,6 +864,10 @@ function editedTodos() {
     due: f.due.value || null,
     priority: Number(f.priority.value),
     tags: splitTags(f.tags.value),
+    repeat: f.repeat.value || null,
+    notes: f.notes.value,
+    steps: readSteps(editor),
+    today: todayKey(),
   });
   const before = JSON.stringify(todos.find((x) => x.id === editingId));
   const after = JSON.stringify(next.find((x) => x.id === editingId));
@@ -567,15 +903,72 @@ function flushEditor() {
 
 listWrap.addEventListener('change', (e) => {
   if (e.target.matches('.todo-check')) toggle(e.target.closest('.todo'));
+  else if (e.target.matches('.step-check')) {
+    const { id } = e.target.closest('.todo').dataset;
+    const step = e.target.dataset.step;
+    const focus = { id, selector: `.step-check[data-step="${CSS.escape(step)}"]` };
+    commit(toggleStep(todos, id, step), { focus });
+    // все шаги готовы: предлагаем отметить задачу, но не отмечаем сами
+    const todo = todos.find((x) => x.id === id);
+    const { done, total } = stepProgress(todo);
+    if (e.target.checked && !todo.done && done === total) {
+      showToast(t('toast.allSteps'), {
+        focus,
+        action: {
+          label: t('toast.markDone'),
+          run: () => {
+            const row = listWrap.querySelector(`.todo[data-id="${CSS.escape(id)}"]`);
+            if (row) toggle(row);
+          },
+        },
+      });
+    }
+  }
 });
 
 listWrap.addEventListener('click', (e) => {
+  if (e.target.closest('#move-today')) {
+    moveOverdueToToday();
+    return;
+  }
   const li = e.target.closest('.todo');
   if (!li) return;
-  if (e.target.closest('.todo-delete')) remove(li);
-  else if (e.target.closest('.todo-edit')) startEditing(li);
+  if (e.target.closest('.todo-more, button.meta-due')) openMenu(e.target.closest('.todo-more, button.meta-due'));
+  else if (e.target.closest('.meta-details')) {
+    const id = li.dataset.id;
+    if (openDetails.has(id)) openDetails.delete(id);
+    else openDetails.add(id);
+    render({ id, selector: '.meta-details' });
+  } else if (e.target.closest('.step-remove')) {
+    const row = e.target.closest('.step-edit');
+    const editor = row.closest('.editor');
+    const list = row.parentElement;
+    const index = [...list.children].indexOf(row);
+    row.remove();
+    numberSteps(editor);
+    const rest = $$('.step-edit', editor);
+    ($('.step-remove', rest[Math.min(index, rest.length - 1)] ?? editor) ?? $('.step-new', editor)).focus();
+  } else if (e.target.closest('.todo-edit')) startEditing(li);
   else if (e.target.closest('.editor-cancel')) finishEditing(false);
   else if (e.target.closest('.meta-tag')) setQuery(`#${e.target.closest('.meta-tag').dataset.tag}`, true);
+});
+
+// Вставили несколько строк: каждая становится шагом (как в Things).
+listWrap.addEventListener('paste', (e) => {
+  const field = e.target;
+  if (!field.matches?.('.step-new, .details-step-new')) return;
+  const text = e.clipboardData?.getData('text') ?? '';
+  if (!/[\r\n]/.test(text.trim())) return;
+  e.preventDefault();
+  if (field.matches('.details-step-new')) {
+    addStepsInline(field, text);
+    return;
+  }
+  for (const line of text.split(/\r?\n/)) {
+    field.value = line;
+    addStepFromInput(field);
+  }
+  field.value = '';
 });
 
 listWrap.addEventListener('dblclick', (e) => {
@@ -589,11 +982,29 @@ listWrap.addEventListener('submit', (e) => {
 });
 
 listWrap.addEventListener('keydown', (e) => {
+  if (e.target.matches('.details-step-new') && e.key === 'Enter' && !e.isComposing) {
+    e.preventDefault();
+    addStepsInline(e.target, e.target.value);
+    return;
+  }
   if (!e.target.closest('.editor')) return;
   if (e.key === 'Escape') {
     e.preventDefault();
     e.stopPropagation();
     finishEditing(false);
+    return;
+  }
+  if (e.key !== 'Enter' || e.isComposing) return;
+  // Enter в поле нового шага добавляет шаг, а не сохраняет задачу
+  if (e.target.matches('.step-new') && e.target.value.trim()) {
+    e.preventDefault();
+    addStepFromInput(e.target);
+  } else if (e.target.matches('.step-title')) {
+    e.preventDefault();
+    $('.step-new', e.target.closest('.editor')).focus();
+  } else if (e.target.matches('textarea') && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    finishEditing(true);
   }
 });
 
@@ -691,13 +1102,15 @@ function moveByKeyboard(li, step) {
 // snapshot: список до действия (для «Вернуть»); focus: куда вернуть фокус после отмены.
 // Текст дублируем в постоянную live-область: скринридеры не всегда читают
 // только что показанный элемент.
-function showToast(message, { snapshot = null, focus = null } = {}) {
+// action: другая кнопка вместо «Вернуть» ({ label, run }), например «Отметить».
+function showToast(message, { snapshot = null, focus = null, action = null } = {}) {
   dropUndo();
   toastText.textContent = message;
-  toastUndo.hidden = !snapshot;
+  toastUndo.textContent = action?.label ?? t('toast.undo');
+  toastUndo.hidden = !snapshot && !action;
   toast.hidden = false;
   announce(message);
-  undo = { snapshot, focus, timer: setTimeout(dropUndo, TOAST_MS) };
+  undo = { snapshot, focus, action, timer: setTimeout(dropUndo, TOAST_MS) };
 }
 
 function dropUndo() {
@@ -718,7 +1131,12 @@ function applyUndo() {
   commit(snapshot, { focus: focus ?? undefined });
 }
 
-toastUndo.addEventListener('click', applyUndo);
+toastUndo.addEventListener('click', () => {
+  if (!undo?.action) return applyUndo();
+  const { run } = undo.action;
+  dropUndo();
+  return run();
+});
 $('#toast-close').addEventListener('click', dropUndo);
 
 // Пока человек тянется к «Вернуть», сообщение не исчезает.
@@ -726,6 +1144,12 @@ toast.addEventListener('pointerenter', () => undo && clearTimeout(undo.timer));
 toast.addEventListener('focusin', () => undo && clearTimeout(undo.timer));
 toast.addEventListener('pointerleave', () => {
   if (undo && !toast.contains(document.activeElement)) undo.timer = setTimeout(dropUndo, TOAST_MS / 2);
+});
+
+$('#samples-remove').addEventListener('click', () => {
+  const snapshot = todos;
+  commit(removeSamples(todos), { focus: $('#view-title') });
+  showToast(t('toast.samplesRemoved'), { snapshot, focus: $('#samples-remove') });
 });
 
 clearDoneBtn.addEventListener('click', () => {
@@ -770,6 +1194,7 @@ sortSelect.addEventListener('change', () => {
 window.addEventListener('hashchange', () => {
   view = viewFromHash();
   editingId = null;
+  closeMenu(false);
   if (query) {
     query = '';
     search.value = '';
@@ -967,6 +1392,11 @@ document.addEventListener('keydown', (e) => {
   } else if (e.key === 'Delete') {
     e.preventDefault();
     remove(row);
+  } else if (e.code === 'KeyT' || e.code === 'KeyM') {
+    e.preventDefault();
+    const today = todayKey();
+    const index = $$('.todo', listWrap).indexOf(row);
+    reschedule(row.dataset.id, e.code === 'KeyT' ? today : addDays(today, 1), { id: row.dataset.id, selector: '.todo-check', index });
   }
 });
 
@@ -992,7 +1422,7 @@ window.addEventListener('storage', (e) => {
 // Вкладку оставили открытой на ночь: «Сегодня» должно стать завтрашним днём.
 setInterval(() => {
   if (todayKey() !== renderedDay && !editingId) {
-    $('#today-date').textContent = i18n.longDate(new Date());
+    setBrandDate();
     render();
   }
 }, 60_000);
@@ -1001,3 +1431,8 @@ storageWarning.hidden = storageAvailable();
 applyTheme();
 applyLanguage();
 render();
+
+// Работа без интернета: страница и скрипты сохраняются после первого визита.
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}
