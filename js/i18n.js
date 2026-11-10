@@ -234,6 +234,14 @@ const ru = {
   'empty.doneText': 'Первая галочка ещё впереди. Отсюда задачу можно вернуть одним нажатием.',
   'empty.openToday': 'К задачам на сегодня',
   'toast.samplesShown': 'Примеры добавлены',
+  'menu.calendar': 'В календарь',
+  'calendar.done': 'Файл для календаря скачан. Откройте его, и календарь напомнит в 9:00.',
+  'install.label': 'Установить как приложение',
+  'install.done': 'Готово: «Задачи» теперь среди приложений.',
+  'backup.never': 'Копии задач ещё не было. Скачайте файл, чтобы не потерять задачи, если браузер очистят.',
+  'backup.old': 'Последняя копия задач была {n} назад. Скачайте свежую.',
+  'backup.days': { one: '{n} день', few: '{n} дня', many: '{n} дней', other: '{n} дня' },
+  'backup.reminder': 'есть напоминание',
 };
 
 const en = {
@@ -465,6 +473,14 @@ const en = {
   'empty.doneText': 'Your first tick is still ahead. You can bring any task back from here.',
   'empty.openToday': 'Go to Today',
   'toast.samplesShown': 'Examples added',
+  'menu.calendar': 'Add to calendar',
+  'calendar.done': 'Calendar file downloaded. Open it and your calendar will remind you at 9:00.',
+  'install.label': 'Install as an app',
+  'install.done': 'Done: Tasks is now among your apps.',
+  'backup.never': 'No backup yet. Download a file so your tasks survive a cleared browser.',
+  'backup.old': 'Your last backup was {n} ago. Download a fresh one.',
+  'backup.days': { one: '{n} day', other: '{n} days' },
+  'backup.reminder': 'reminder',
 };
 
 export const DICTS = { ru, en };

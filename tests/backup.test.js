@@ -63,3 +63,15 @@ test('persist: уже защищено, согласие, отказ, нет API
   assert.equal(await requestPersist(undefined), false);
   assert.equal(await requestPersist({ storage: { persist: async () => { throw new Error('x'); } } }), false);
 });
+
+test('копия: хранилище, которое бросает уже при чтении window.localStorage, не роняет приложение', () => {
+  const before = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, get() { throw new Error('SecurityError'); } });
+  try {
+    assert.equal(readLastBackup(), null);
+    assert.equal(markBackup(), false);
+  } finally {
+    if (before) Object.defineProperty(globalThis, 'localStorage', before);
+    else delete globalThis.localStorage;
+  }
+});

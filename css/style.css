@@ -439,14 +439,40 @@ kbd {
   }
 }
 
+/* напоминание о копии: строка в меню данных и точка на кнопке */
+.data-note {
+  margin: 0 0 4px;
+  padding: 8px 10px 10px;
+  border-bottom: 1px solid var(--line);
+  color: var(--text-2);
+  font-size: var(--fs-small);
+  line-height: 20px;
+  text-wrap: pretty;
+}
+
+#data-btn {
+  position: relative;
+}
+
+.data-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pink);
+}
+
 .menu-item {
   display: flex;
   align-items: center;
   gap: 10px;
   min-height: 36px;
-  padding: 0 10px;
+  padding: 6px 10px;
   border-radius: var(--r-sm);
   font-size: var(--fs-small);
+  line-height: 20px;
   text-align: left;
 }
 

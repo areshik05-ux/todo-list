@@ -10,9 +10,13 @@ export const BACKUP_MIN_TASKS = 3; // при одной-двух задачах 
 
 const DAY = 24 * 60 * 60 * 1000;
 
-export function readLastBackup(storage = globalThis.localStorage) {
+// Хранилище берём только внутри try: при запрете cookies уже чтение
+// window.localStorage бросает SecurityError (параметр по умолчанию вычислился бы до try).
+const local = (storage) => storage ?? globalThis.localStorage;
+
+export function readLastBackup(storage) {
   try {
-    const n = Number(storage?.getItem(LAST_BACKUP_KEY));
+    const n = Number(local(storage)?.getItem(LAST_BACKUP_KEY));
     return Number.isFinite(n) && n > 0 ? n : null;
   } catch {
     return null;
@@ -20,9 +24,9 @@ export function readLastBackup(storage = globalThis.localStorage) {
 }
 
 // Вызывать после скачивания файла с задачами.
-export function markBackup(storage = globalThis.localStorage, now = Date.now()) {
+export function markBackup(storage, now = Date.now()) {
   try {
-    storage?.setItem(LAST_BACKUP_KEY, String(now));
+    local(storage)?.setItem(LAST_BACKUP_KEY, String(now));
     return true;
   } catch {
     return false;

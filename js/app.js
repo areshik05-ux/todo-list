@@ -12,6 +12,9 @@ import { parseQuickAdd, splitTags } from './parse.js';
 import { todayKey, toKey, fromKey, addDays, nextMonday, daysBetween } from './dates.js';
 import { createI18n, detectLang } from './i18n.js';
 import { sampleTodos, translateSamples } from './samples.js';
+import { toICS, icsFileName, ICS_TYPE } from './calendar.js';
+import { backupNudge, markBackup, readLastBackup, daysSince, requestPersist } from './backup.js';
+import { createInstall, launchAction } from './install.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -99,7 +102,8 @@ let planExpanded = false; // «Показать ещё»: все предлож�
 let planAgainOpen = false; // день закрыт, но человек сам попросил ещё задач
 let pendingJump = null; // клик по дню недели: куда прокрутить после смены раздела
 let weekFocus = null; // день недели, который получает Tab (переходящий tabindex)
-let renderedSlot = ''; // день, время суток и вечер, для которых нарисована шапка
+let renderedSlot = '';
+let persistAsked = false; // просьба хранить данные постоянно: один раз, после своей задачи // день, время суток и вечер, для которых нарисована шапка
 
 /* Состояние */
 
@@ -1088,6 +1092,7 @@ function applyLanguage() {
     btn.setAttribute('aria-label', t(key));
     btn.title = t(key);
   }
+  renderBackupNudge();
   setBrandDate();
   lastChips = '';
   updateChips();
@@ -1206,6 +1211,11 @@ form.addEventListener('submit', (e) => {
   commit(next, { focus: 'input' });
   updateChips();
   const added = next[0];
+  // первая своя задача: просим браузер не стирать данные сайта (Firefox может спросить)
+  if (!persistAsked) {
+    persistAsked = true;
+    requestPersist();
+  }
   const shownIn = inView(added, view === 'done' ? 'all' : view, today, dayKeyOf) ? null
     : added.due && added.due > today ? 'upcoming' : 'all';
   if (shownIn) showToast(t('toast.addedTo', { title: added.title, view: t(`view.${shownIn}`) }));
@@ -1337,7 +1347,8 @@ function openMenu(opener) {
     // для сделанной задачи перенос не нужен; вариант, равный текущему сроку
     // или уже показанной дате (в воскресенье «завтра» и есть следующая неделя), тоже
     item.hidden = (action !== 'delete' && (todo?.done ?? false))
-      || (due !== undefined && (due === todo?.due || shown.has(due)));
+      || (due !== undefined && (due === todo?.due || shown.has(due)))
+      || (action === 'calendar' && !todo?.due);
     if (due !== undefined && !item.hidden) shown.add(due);
   }
   $('.menu-sep', rowMenu).hidden = todo?.done ?? false;
@@ -1382,6 +1393,16 @@ rowMenu.addEventListener('click', (e) => {
   if (!li) return;
   if (item.dataset.action === 'delete') {
     remove(li);
+    return;
+  }
+  if (item.dataset.action === 'calendar') {
+    const todo = todos.find((x) => x.id === id);
+    const file = todo && toICS(todo, { lang: i18n.lang });
+    if (file) {
+      download(file, icsFileName(todo), ICS_TYPE);
+      showToast(t('calendar.done'));
+    }
+    ($(selector, li) ?? $('.todo-more', li))?.focus();
     return;
   }
   if (item.dataset.action === 'pick') {
@@ -2048,8 +2069,8 @@ $('.data').addEventListener('focusout', (e) => {
   if (e.relatedTarget && !e.currentTarget.contains(e.relatedTarget)) setDataPanel(false);
 });
 
-function download(text, name) {
-  const blob = new Blob([text], { type: 'application/json' });
+function download(text, name, type = 'application/json') {
+  const blob = new Blob([text], { type });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -2062,6 +2083,8 @@ function download(text, name) {
 
 $('#export-btn').addEventListener('click', () => {
   download(exportJSON(todos), `tasks-${todayKey()}.json`);
+  markBackup();
+  renderBackupNudge();
   setDataPanel(false);
   dataBtn.focus();
 });
@@ -2081,7 +2104,33 @@ importFile.addEventListener('change', async () => {
   }
   const snapshot = todos;
   commit(result.todos, { focus: dataBtn });
+  renderBackupNudge();
   showToast(t('toast.imported', { n: result.count }), { snapshot, focus: dataBtn });
+});
+
+// Тихое напоминание о копии: строка в меню данных и точка на кнопке, без окон.
+function renderBackupNudge() {
+  const last = readLastBackup();
+  const kind = backupNudge(todos, { lastAt: last });
+  const note = $('#backup-nudge');
+  note.hidden = !kind;
+  $('#data-dot').hidden = !kind;
+  if (kind) note.textContent = kind === 'never' ? t('backup.never') : t('backup.old', { n: t('backup.days', { n: daysSince(last) }) });
+  dataBtn.setAttribute('aria-label', kind ? `${t('data.label')} · ${t('backup.reminder')}` : t('data.label'));
+}
+
+// Установка как приложение: пункт в меню данных появляется, когда браузер это умеет.
+const installer = createInstall();
+const installBtn = $('#install-btn');
+installer.onChange((can) => {
+  if (!can && installBtn.contains(document.activeElement)) dataBtn.focus();
+  installBtn.hidden = !can;
+});
+installBtn.addEventListener('click', async () => {
+  // после ответа пункт прячется: фокус заранее на кнопку меню, чтобы не упасть в body
+  dataBtn.focus();
+  setDataPanel(false);
+  if ((await installer.install()) === 'accepted') showToast(t('install.done'));
 });
 
 let helpOpener = null;
@@ -2265,7 +2314,12 @@ applyLanguage();
 quietly(() => render());
 
 // На компьютере сразу можно печатать задачу; на телефоне клавиатуру сами не открываем.
-if (matchMedia('(hover: hover) and (pointer: fine)').matches && document.activeElement === document.body) input.focus();
+// Ярлык «Новая задача» с иконки приложения (?new=1) ставит курсор в поле и на телефоне.
+const launched = launchAction(location.href);
+if (launched.action === 'new') {
+  history.replaceState(null, '', launched.cleanHref);
+  input.focus();
+} else if (finePointer() && document.activeElement === document.body) input.focus();
 
 // Работа без интернета: страница и скрипты сохраняются после первого визита.
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
