@@ -95,6 +95,17 @@ netlify.toml          настройки Netlify: тесты перед выкл
   - Как это сработало: вторая версия получила у судьи в среднем 7.1 из 10. Третья прошла 4 круга «оценка → доработка»: 7.5, 8.0, 8.25, 8.67. В последнем круге каждый из 12 критериев 8 или 9, серьёзных и средних замечаний нет. До порога 9.0 в среднем не хватило мелочей, их список у судьи. По ходу критик нашёл и я исправила потерю набранного текста при «Вернуть», двойные копии повторяющихся задач и сбои при работе в двух вкладках. Отметка задачи в списке из 200 штук на медленном телефоне ускорилась с ~900 до ~100 мс.
 - Проверка: автотесты плюс прогоны в браузере (безголовый Chrome через DevTools Protocol) на двух языках, в обеих темах, на ширине от 320 px и только с клавиатуры.
 
+## Что дальше
+
+Что я бы добавила следующим, по порядку пользы:
+- **время в быстром вводе**: «Созвон в 15:00» покажет время в строке, внутри дня задачи встанут по времени, и время попадёт в календарь;
+- **перенос на другое устройство без аккаунта**: ссылка, в которой задачи упакованы после `#`, поэтому они не уходят ни на какой сервер. Открыли на телефоне, и список там;
+- **перетащить задачу на день недели**, чтобы перенести срок одним движением;
+- **подсказка для застрявших задач**: если задачу перенесли три раза, в её меню появится «Слишком большая? Разбей на шаги»;
+- **печать «Сегодня»** чистым списком на бумаге.
+
+Чего делать не буду: ИИ-разбор задач через внешний сервис. Для него нужен ключ или сервер, и пропадёт главное обещание: задачи хранятся только в вашем браузере.
+
 ## English
 
 A to-do list in plain HTML, CSS and JavaScript (ES modules, no build, no dependencies). Natural-language quick add in English and Russian (“Call the bank tomorrow !1 #errands”, “Stand-up every monday”), recurring tasks, steps and notes inside a task, two-click rescheduling, “move all overdue to today”, views All / Today / Upcoming / Done, priorities, tags, search, sorting, drag-and-drop with a keyboard alternative, shortcuts, undo, JSON export and import, first-visit examples, offline support (service worker), light and dark themes, RU/EN interface. Data stays in localStorage. Run `npm start` to serve it and `npm test` for the tests. Built with Claude Code, with research-backed design, UX-psychology and judge agents.
