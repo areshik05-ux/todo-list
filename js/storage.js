@@ -124,10 +124,11 @@ export function loadTodosReport(storage) {
     try {
       local(storage).setItem(key, raw);
       local(storage).setItem(STORAGE_KEY, serialize([]));
+      return { todos: [], corrupt: true, backedUp: true };
     } catch {
-      // места на копию нет: запись не трогаем, предупреждение всё равно покажем
+      // места на копию нет: запись не трогаем и отдаём её странице, чтобы человек мог её скачать
+      return { todos: [], corrupt: true, backedUp: false, raw };
     }
-    return { todos: [], corrupt: true };
   } catch {
     return { todos: [], corrupt: false };
   }

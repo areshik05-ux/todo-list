@@ -76,11 +76,19 @@ let menu = null; // { id, opener } открытого меню строки
 
 /* Состояние */
 
+// Испорченные данные не удалось скопировать: пока человек их не скачал, список не сохраняем.
+let heldRaw = loaded.corrupt && !loaded.backedUp;
+
+function persist() {
+  if (heldRaw) return;
+  storageWarning.hidden = saveTodos(todos);
+}
+
 // Все изменения списка проходят здесь: сохранить, перерисовать.
 function commit(next, { focus } = {}) {
   dropUndo();
   todos = next;
-  storageWarning.hidden = saveTodos(todos);
+  persist();
   render(focus);
 }
 
@@ -108,12 +116,13 @@ function svgIcon(name, className = 'icon') {
 
 function visibleGroups(today) {
   if (query) {
-    const found = todos.filter((todo) => matchesQuery(todo, query));
+    const found = todos.filter((todo) => matchesQuery(todo, query) || todo.id === editingId);
     const open = sortTodos(found.filter((todo) => !todo.done), settings.sort);
     return [{ items: [...open, ...sortDone(found.filter((todo) => todo.done))] }];
   }
 
-  const shown = todos.filter((todo) => inView(todo, view, today, dayKeyOf) || lingering.has(todo.id));
+  // открытый редактор не исчезает, даже если «Вернуть» или другая вкладка увели задачу из раздела
+  const shown = todos.filter((todo) => inView(todo, view, today, dayKeyOf) || lingering.has(todo.id) || todo.id === editingId);
 
   if (view === 'done') return [{ items: sortDone(shown) }];
 
@@ -135,7 +144,7 @@ function visibleGroups(today) {
     if (!overdue.length) return [{ items: ordered }];
     return [
       { title: t('group.overdue'), overdue: true, items: overdue },
-      { title: t('date.today'), items: ordered },
+      { title: t('group.today'), items: ordered },
     ].filter((g) => g.items.length);
   }
 
@@ -754,6 +763,19 @@ function clearInputError() {
   render();
 }
 
+// Поле в фокусе с самого начала, но «/» и «?» в пустом поле остаются клавишами
+// поиска и справки, как обещают подсказки.
+input.addEventListener('keydown', (e) => {
+  if (input.value || e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
+  if (e.key === '?') {
+    e.preventDefault();
+    openHelp();
+  } else if (e.key === '/') {
+    e.preventDefault();
+    search.focus();
+  }
+});
+
 input.addEventListener('input', () => {
   clearInputError();
   if (!input.value.trim()) ignoreTokens = [];
@@ -1073,7 +1095,7 @@ function flushEditor() {
   if (next !== todos) {
     dropUndo(); // снимок для «Вернуть» сделан до правки и откатил бы её
     todos = next;
-    storageWarning.hidden = saveTodos(todos);
+    persist();
   }
   setTimeout(() => {
     if (!editingId && $('.editor', listWrap)) render();
@@ -1327,7 +1349,8 @@ function applyUndo() {
   if (editingId && !snapshot.some((x) => x.id === editingId)) editingId = null;
   for (const timer of lingering.values()) clearTimeout(timer);
   lingering.clear();
-  commit(snapshot, { focus: focus ?? undefined });
+  // при открытом редакторе фокус остаётся в нём: уход фокуса сохранил бы и закрыл редактор
+  commit(snapshot, { focus: editingId ? undefined : focus ?? undefined });
   if (editingId) syncEditor(todos.find((x) => x.id === editingId));
   announce(t('toast.restored'));
 }
@@ -1432,7 +1455,7 @@ for (const btn of $$('[data-lang]')) {
     const translated = translateSamples(todos, t);
     if (translated !== todos) {
       todos = translated;
-      storageWarning.hidden = saveTodos(todos);
+      persist();
     }
     render();
   });
@@ -1460,16 +1483,20 @@ $('.data').addEventListener('focusout', (e) => {
   if (e.relatedTarget && !e.currentTarget.contains(e.relatedTarget)) setDataPanel(false);
 });
 
-$('#export-btn').addEventListener('click', () => {
-  const blob = new Blob([exportJSON(todos)], { type: 'application/json' });
+function download(text, name) {
+  const blob = new Blob([text], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `tasks-${todayKey()}.json`;
+  a.download = name;
   document.body.append(a);
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+$('#export-btn').addEventListener('click', () => {
+  download(exportJSON(todos), `tasks-${todayKey()}.json`);
   setDataPanel(false);
   dataBtn.focus();
 });
@@ -1624,6 +1651,7 @@ window.addEventListener('storage', (e) => {
     // снимок для «Вернуть» сделан до чужой правки и стёр бы её
     dropUndo();
     render();
+    if (editingId) syncEditor(todos.find((todo) => todo.id === editingId));
   } else if (e.key === SETTINGS_KEY) {
     const next = loadSettings();
     Object.assign(settings, next, { lang: next.lang ?? settings.lang });
@@ -1643,6 +1671,20 @@ setInterval(() => {
 
 storageWarning.hidden = storageAvailable();
 $('#storage-corrupt').hidden = !loaded.corrupt;
+if (loaded.corrupt && !loaded.backedUp) {
+  $('#corrupt-copied').hidden = true;
+  $('#corrupt-nocopy').hidden = false;
+  $('#corrupt-download').hidden = false;
+}
+
+// Испорченную запись не на что скопировать: даём её скачать, а пока не скачали, не затираем.
+$('#corrupt-download').addEventListener('click', () => {
+  download(loaded.raw, `tasks-damaged-${todayKey()}.json`);
+  heldRaw = false;
+  $('#storage-corrupt').hidden = true;
+  persist();
+  dataBtn.focus();
+});
 applyTheme();
 applyLanguage();
 render();

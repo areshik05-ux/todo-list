@@ -173,3 +173,11 @@ test('«к пятнице», «до пятницы», «в пт», «до зав
   assert.equal(p('Mon cheri').due, null, 'сокращение без on/next не день');
   assert.equal(p('Купить пт-шку').due, null);
 });
+
+test('мелочи разбора: «к среде», "on sun", "by friday", точка после срока', () => {
+  assert.equal(p('Готовиться к среде').due, null);
+  assert.equal(p('Lie on sun lounger').due, null);
+  assert.deepEqual([p('Pay by friday').title, p('Pay by friday').due], ['Pay', '2026-11-13']);
+  assert.equal(p('Done by today').title, 'Done');
+  assert.equal(p('Встреча завтра.').title, 'Встреча.');
+});

@@ -154,7 +154,11 @@
       <p class="hint" id="add-hint"></p>
 
       <p class="warning" id="storage-warning" role="alert" data-i18n="storage.warning" hidden></p>
-      <p class="warning" id="storage-corrupt" role="alert" data-i18n="storage.corrupt" hidden></p>
+      <div class="warning" id="storage-corrupt" role="alert" hidden>
+        <span id="corrupt-copied" data-i18n="storage.corrupt"></span>
+        <span id="corrupt-nocopy" data-i18n="storage.corruptNoCopy" hidden></span>
+        <button type="button" class="link-btn" id="corrupt-download" data-i18n="storage.download" hidden></button>
+      </div>
       <p class="visually-hidden" id="live" aria-live="polite"></p>
 
       <div class="samples-bar" id="samples-bar" hidden>

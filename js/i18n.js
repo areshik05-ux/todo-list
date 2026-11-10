@@ -175,6 +175,9 @@ const ru = {
   'steps.added': 'Шаг добавлен: «{step}»',
   'toast.restored': 'Возвращено',
   'storage.corrupt': 'Сохранённые задачи не прочитались. Копия данных сохранена в браузере, список начат заново.',
+  'storage.corruptNoCopy': 'Сохранённые задачи не прочитались, а места на копию в браузере нет. Скачайте данные: пока вы этого не сделали, изменения не сохраняются.',
+  'storage.download': 'Скачать данные',
+  'group.today': 'На сегодня',
   'dayDone': 'На сегодня всё. Отдыхайте',
 };
 
@@ -348,6 +351,9 @@ const en = {
   'steps.added': 'Step added: “{step}”',
   'toast.restored': 'Restored',
   'storage.corrupt': 'Saved tasks could not be read. A copy of the data is kept in the browser and the list starts fresh.',
+  'storage.corruptNoCopy': 'Saved tasks could not be read and there is no room in the browser for a copy. Download the data: until you do, changes are not saved.',
+  'storage.download': 'Download the data',
+  'group.today': 'Due today',
   'dayDone': 'That’s all for today. Time to rest',
 };
 

@@ -256,11 +256,10 @@ kbd {
   position: absolute;
   top: -5px;
   left: 6px;
-  width: 2px;
+  width: 12px;
   height: 6px;
-  border-radius: 1px;
-  background: currentColor;
-  box-shadow: 10px 0 currentColor;
+  border-right: 2px solid;
+  border-left: 2px solid;
 }
 
 @media (max-width: 349px) {

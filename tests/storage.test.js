@@ -161,7 +161,7 @@ test('сделанный раз повторяющейся задачи хран
 
 test('испорченная запись: копия в запасной ключ, сигнал для предупреждения', () => {
   const storage = memoryStorage({ [STORAGE_KEY]: '{"todos": [obrezano' });
-  assert.deepEqual(loadTodosReport(storage), { todos: [], corrupt: true });
+  assert.deepEqual(loadTodosReport(storage), { todos: [], corrupt: true, backedUp: true });
   assert.equal(storage.raw.get(BACKUP_KEY), '{"todos": [obrezano');
   storage.setItem(STORAGE_KEY, '{"oops": 1}');
   loadTodosReport(storage);
@@ -192,4 +192,10 @@ test('после копии испорченной записи список н�
   full.setItem = () => { throw new Error('QuotaExceededError'); };
   assert.equal(loadTodosReport(full).corrupt, true, 'места на копию нет: предупреждение всё равно');
   assert.equal(full.raw.get(STORAGE_KEY), '{битое', 'и запись не тронута');
+});
+
+test('нет места на копию испорченной записи: честный флаг и сама запись для скачивания', () => {
+  const full = memoryStorage({ [STORAGE_KEY]: '{битое' });
+  full.setItem = () => { throw new Error('QuotaExceededError'); };
+  assert.deepEqual(loadTodosReport(full), { todos: [], corrupt: true, backedUp: false, raw: '{битое' });
 });
