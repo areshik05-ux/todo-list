@@ -242,6 +242,17 @@ const ru = {
   'backup.old': 'Последняя копия задач была {n} назад. Скачайте свежую.',
   'backup.days': { one: '{n} день', few: '{n} дня', many: '{n} дней', other: '{n} дня' },
   'backup.reminder': 'есть напоминание',
+  'palette.title': 'Команды',
+  'palette.placeholder': 'Куда перейти или что сделать',
+  'palette.empty': 'Ничего не нашлось. Попробуйте другое слово.',
+  'palette.actions': 'Действия',
+  'palette.views': 'Разделы',
+  'palette.tasks': 'Задачи',
+  'palette.dark': 'Тёмная тема',
+  'palette.light': 'Светлая тема',
+  'palette.create': 'Новая задача: «{title}»',
+  'palette.done': 'сделана',
+  'help.palette': 'Команды и поиск по задачам',
 };
 
 const en = {
@@ -481,6 +492,17 @@ const en = {
   'backup.old': 'Your last backup was {n} ago. Download a fresh one.',
   'backup.days': { one: '{n} day', other: '{n} days' },
   'backup.reminder': 'reminder',
+  'palette.title': 'Commands',
+  'palette.placeholder': 'Go to or do something',
+  'palette.empty': 'Nothing found. Try another word.',
+  'palette.actions': 'Actions',
+  'palette.views': 'Views',
+  'palette.tasks': 'Tasks',
+  'palette.dark': 'Dark theme',
+  'palette.light': 'Light theme',
+  'palette.create': 'New task: “{title}”',
+  'palette.done': 'done',
+  'help.palette': 'Commands and task search',
 };
 
 export const DICTS = { ru, en };

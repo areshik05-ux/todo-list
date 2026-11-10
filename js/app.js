@@ -1975,6 +1975,7 @@ function setQuery(value, focusSearch = false) {
   render();
   if (focusSearch) search.focus();
   else if (pendingJump) runJump();
+  else if (pendingTask) focusTask();
 }
 
 let searchTimer = 0;
@@ -2016,8 +2017,9 @@ window.addEventListener('hashchange', () => {
     searchClear.hidden = true;
   }
   render();
-  // пришли сюда кликом по дню недели: прокрутить к этому дню
+  // пришли сюда кликом по дню недели: прокрутить к этому дню; из команд: к задаче
   if (pendingJump) runJump();
+  if (pendingTask) focusTask();
 });
 
 // Клик по уже открытому разделу во время поиска возвращает к разделу.
@@ -2151,6 +2153,176 @@ helpDialog.addEventListener('click', (e) => {
   if (!inside) helpDialog.close();
 });
 
+/* Команды (Ctrl+K): разделы, действия, поиск задачи по названию */
+
+const palette = $('#palette');
+const palInput = $('#palette-input');
+const palList = $('#palette-list');
+const palEmpty = $('#palette-empty');
+let palItems = [];
+let palActive = 0;
+let pendingTask = null; // задача, к которой перейти после смены раздела
+
+const isMac = /Mac|iPhone|iPad/.test(navigator.platform ?? '');
+if (isMac) for (const kbd of $$('.mod-key')) kbd.textContent = '⌘';
+
+const VIEW_ICONS = { today: 'today', upcoming: 'upcoming', all: 'all', done: 'done' };
+
+function paletteCommands() {
+  const dark = settings.theme === 'dark';
+  const other = settings.lang === 'ru' ? 'en' : 'ru';
+  return [
+    { group: 'actions', id: 'new', label: t('help.new'), hint: 'N', icon: 'plus', run: () => input.focus() },
+    ...NAV.map((name, i) => ({
+      group: 'views', id: `view-${name}`, label: t(`view.${name}`), hint: String(i + 1), icon: VIEW_ICONS[name],
+      run: () => { location.hash = `#/${name}`; },
+    })),
+    { group: 'actions', id: 'theme', label: t(dark ? 'palette.light' : 'palette.dark'), icon: dark ? 'sun' : 'moon', run: () => themeBtn.click() },
+    { group: 'actions', id: 'lang', label: other === 'en' ? 'English' : 'Русский', icon: 'hash', run: () => $(`[data-lang="${other}"]`).click() },
+    { group: 'actions', id: 'export', label: t('menu.export'), icon: 'download', run: () => $('#export-btn').click() },
+    { group: 'actions', id: 'import', label: t('menu.import'), icon: 'upload', run: () => importFile.click() },
+    { group: 'actions', id: 'help', label: t('menu.shortcuts'), hint: '?', icon: 'help', run: () => openHelp() },
+  ];
+}
+
+function renderPalette() {
+  const raw = palInput.value.trim();
+  const words = raw.toLowerCase().split(/\s+/).filter(Boolean);
+  const match = (text) => words.every((w) => text.toLowerCase().includes(w));
+  // пустой запрос: самое частое; иначе всё, что подходит по словам
+  let items = paletteCommands();
+  if (!words.length) items = items.filter((c) => ['new', 'view-today', 'theme', 'lang', 'export'].includes(c.id));
+  else items = items.filter((c) => match(c.label));
+  const today = todayKey();
+  const found = words.length ? sortTodos(todos.filter((x) => match(x.title)), 'manual') : [];
+  const tasks = [...found.filter((x) => !x.done), ...found.filter((x) => x.done)].slice(0, 6).map((x) => ({
+    group: 'tasks', id: `task-${x.id}`, label: x.title, icon: x.done ? 'done' : 'today',
+    hint: x.done ? t('palette.done') : x.due ? i18n.relativeDate(x.due, today) : '',
+    run: () => jumpToTask(x.id),
+  }));
+  const groups = [
+    ['actions', items.filter((c) => c.group === 'actions')],
+    ['views', items.filter((c) => c.group === 'views')],
+    ['tasks', tasks],
+  ];
+  palEmpty.hidden = Boolean(items.length || tasks.length) || !words.length;
+  palEmpty.textContent = palEmpty.hidden ? '' : t('palette.empty');
+  // ничего не нашлось или нашлось: последней строкой «Новая задача: …»
+  if (words.length) groups.push(['create', [{ group: 'create', id: 'create', label: t('palette.create', { title: raw }), icon: 'plus', run: () => fillComposer(raw) }]]);
+  palItems = [];
+  const nodes = [];
+  for (const [name, list] of groups) {
+    if (!list.length) continue;
+    const box = document.createElement('div');
+    box.setAttribute('role', 'group');
+    if (name !== 'create') {
+      const head = document.createElement('div');
+      head.className = 'palette-group';
+      head.id = `palette-g-${name}`;
+      head.setAttribute('role', 'presentation');
+      head.textContent = t(`palette.${name}`);
+      box.setAttribute('aria-labelledby', head.id);
+      box.append(head);
+    }
+    for (const item of list) {
+      const opt = document.createElement('div');
+      opt.className = 'palette-option';
+      opt.id = `palette-o-${palItems.length}`;
+      opt.setAttribute('role', 'option');
+      opt.dataset.index = String(palItems.length);
+      const label = document.createElement('span');
+      label.className = 'palette-label';
+      label.textContent = item.label;
+      opt.append(svgIcon(item.icon), label);
+      if (item.hint) {
+        const hintEl = document.createElement(/^[\dN?]$/.test(item.hint) ? 'kbd' : 'span');
+        hintEl.className = 'palette-hint';
+        hintEl.textContent = item.hint;
+        opt.append(hintEl);
+      }
+      palItems.push(item);
+      box.append(opt);
+    }
+    nodes.push(box);
+  }
+  palList.replaceChildren(...nodes);
+  setPaletteActive(0);
+}
+
+function setPaletteActive(index) {
+  palActive = Math.max(0, Math.min(index, palItems.length - 1));
+  for (const opt of $$('[role="option"]', palList)) {
+    const on = Number(opt.dataset.index) === palActive;
+    opt.setAttribute('aria-selected', String(on));
+    if (on) opt.scrollIntoView({ block: 'nearest' });
+  }
+  if (palItems.length) palInput.setAttribute('aria-activedescendant', `palette-o-${palActive}`);
+  else palInput.removeAttribute('aria-activedescendant');
+}
+
+function openPalette() {
+  if (palette.open || helpDialog.open) return;
+  closeMenu(false);
+  setDataPanel(false);
+  palInput.value = '';
+  renderPalette();
+  palette.showModal();
+  palInput.focus();
+}
+
+function runPalette(index) {
+  const item = palItems[index];
+  if (!item) return;
+  // окно закрывается раньше команды: фокус возвращается туда, где был, а команда может увести его дальше
+  palette.close();
+  item.run();
+}
+
+palInput.addEventListener('input', renderPalette);
+palInput.addEventListener('keydown', (e) => {
+  if (e.isComposing) return;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    const n = palItems.length;
+    if (n) setPaletteActive((palActive + (e.key === 'ArrowDown' ? 1 : -1) + n) % n);
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    runPalette(palActive);
+  }
+});
+palList.addEventListener('pointermove', (e) => {
+  const opt = e.target.closest('[role="option"]');
+  if (opt && Number(opt.dataset.index) !== palActive) setPaletteActive(Number(opt.dataset.index));
+});
+palList.addEventListener('click', (e) => {
+  const opt = e.target.closest('[role="option"]');
+  if (opt) runPalette(Number(opt.dataset.index));
+});
+// клик мимо окна закрывает его
+palette.addEventListener('click', (e) => {
+  if (e.target === palette) palette.close();
+});
+
+// Переход к задаче из команд: открытая в «Все», сделанная в «Готово», фокус на её кружок.
+function jumpToTask(id) {
+  const todo = todos.find((x) => x.id === id);
+  if (!todo) return;
+  const target = todo.done ? 'done' : 'all';
+  pendingTask = id;
+  if (view === target && !query) focusTask();
+  else if (view === target) setQuery('');
+  else location.hash = `#/${target}`;
+}
+
+function focusTask() {
+  const id = pendingTask;
+  pendingTask = null;
+  const row = id && listWrap.querySelector(`.todo[data-id="${CSS.escape(id)}"]`);
+  if (!row) return;
+  row.scrollIntoView({ block: 'center', behavior: reducedMotion() ? 'auto' : 'smooth' });
+  $('.todo-check', row).focus({ preventScroll: true });
+}
+
 /* Горячие клавиши */
 
 const TEXT_INPUT = 'input:not([type="checkbox"]):not([type="radio"]):not([type="button"]), textarea, select, [contenteditable="true"]';
@@ -2166,6 +2338,14 @@ function rowFocus(dir) {
 
 document.addEventListener('keydown', (e) => {
   if (e.defaultPrevented || e.isComposing || helpDialog.open) return;
+  // Ctrl+K (⌘K): команды. Работает и из поля ввода; простые J/K остаются переходом по задачам.
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.code === 'KeyK') {
+    e.preventDefault();
+    if (palette.open) palette.close();
+    else openPalette();
+    return;
+  }
+  if (palette.open) return;
   const target = e.target;
   const row = target.closest?.('.todo');
 

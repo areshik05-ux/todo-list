@@ -313,9 +313,24 @@
       <div><dt data-i18n="help.move">Переместить</dt><dd><kbd>Alt</kbd><kbd>↑</kbd><kbd>↓</kbd></dd></div>
       <div><dt data-i18n="help.undo">Вернуть</dt><dd><kbd>Ctrl</kbd><kbd>Z</kbd></dd></div>
       <div><dt data-i18n="help.esc">Закрыть</dt><dd><kbd>Esc</kbd></dd></div>
+      <div><dt data-i18n="help.palette">Команды и поиск по задачам</dt><dd><kbd class="mod-key">Ctrl</kbd><kbd>K</kbd></dd></div>
       <div><dt data-i18n="help.help">Этот список</dt><dd><kbd>?</kbd></dd></div>
     </dl>
     </div>
+  </dialog>
+
+  <!-- Команды: Ctrl+K (⌘K). Поле-комбобокс и список вариантов -->
+  <dialog class="dialog palette" id="palette" aria-labelledby="palette-title">
+    <h2 class="visually-hidden" id="palette-title" data-i18n="palette.title">Команды</h2>
+    <div class="palette-field">
+      <svg class="icon" aria-hidden="true"><use href="#i-search"/></svg>
+      <input id="palette-input" type="text" role="combobox" aria-autocomplete="list" aria-expanded="true"
+             aria-controls="palette-list" autocomplete="off" spellcheck="false" maxlength="100"
+             data-i18n-attr="placeholder:palette.placeholder;aria-label:palette.placeholder" placeholder="Куда перейти или что сделать">
+      <kbd class="key-hint" aria-hidden="true">Esc</kbd>
+    </div>
+    <div class="palette-list" id="palette-list" role="listbox" data-i18n-attr="aria-label:palette.title" aria-label="Команды"></div>
+    <p class="palette-empty" id="palette-empty" role="status" hidden></p>
   </dialog>
 
   <template id="todo-template">
