@@ -50,7 +50,12 @@ const SAMPLE_RE = /^[a-z]{1,20}$/;
 // Связь сделанного раза повторяющейся задачи со следующим (для снятия отметки).
 function cleanSeries(s) {
   if (!s || !isRepeat(s.repeat) || typeof s.next !== 'string' || !s.next || s.next.length > 100) return null;
-  return { repeat: s.repeat, repeatDay: isRepeatDay(s.repeat, s.repeatDay) ? s.repeatDay : null, next: s.next };
+  return {
+    repeat: s.repeat,
+    repeatDay: isRepeatDay(s.repeat, s.repeatDay) ? s.repeatDay : null,
+    next: s.next,
+    ...(typeof s.fp === 'string' && s.fp.length <= 20000 ? { fp: s.fp } : {}),
+  };
 }
 
 export function cleanList(data) {
@@ -100,7 +105,9 @@ export function isCorrupt(raw) {
   if (raw === null || raw === '') return false;
   try {
     const data = JSON.parse(raw);
-    return !Array.isArray(data) && !Array.isArray(data?.todos);
+    const list = Array.isArray(data) ? data : data?.todos;
+    // не список или список, в котором нет ни одной годной задачи
+    return !Array.isArray(list) || (list.length > 0 && cleanList(list).length === 0);
   } catch {
     return true;
   }
@@ -111,7 +118,9 @@ export function loadTodosReport(storage) {
   try {
     const raw = local(storage).getItem(STORAGE_KEY);
     if (!isCorrupt(raw)) return { todos: loadTodos(storage), corrupt: false };
-    if (local(storage).getItem(BACKUP_KEY) === null) local(storage).setItem(BACKUP_KEY, raw);
+    // каждая испорченная запись в свою копию: первую не затираем
+    const key = local(storage).getItem(BACKUP_KEY) === null ? BACKUP_KEY : `${BACKUP_KEY}:${Date.now()}`;
+    local(storage).setItem(key, raw);
     return { todos: [], corrupt: true };
   } catch {
     return { todos: [], corrupt: false };

@@ -944,12 +944,17 @@ h1 {
   grid-column: 1;
   display: grid;
   place-items: center;
-  width: 20px;
+  width: 24px;
   height: var(--hit);
   border-radius: var(--r-sm);
   color: var(--ctrl);
   cursor: grab;
   touch-action: none;
+}
+
+/* строка с content-visibility обрезает всё, что выходит за неё: рамку фокуса рисуем внутри */
+.handle:focus-visible {
+  outline-offset: -2px;
 }
 
 .handle .icon {
@@ -1919,6 +1924,8 @@ button.meta-due[aria-expanded="true"] {
 /* Ссылка «к списку» для клавиатуры: видна только в фокусе */
 
 .skip-link {
+  color: var(--text);
+  font-weight: 600;
   position: absolute;
   z-index: 40;
   top: 8px;
@@ -1926,11 +1933,11 @@ button.meta-due[aria-expanded="true"] {
   padding: 8px 12px;
   border-radius: var(--r-md);
   background: var(--surface);
-  box-shadow: var(--shadow-overlay);
   transform: translateY(-200%);
 }
 
 .skip-link:focus {
+  box-shadow: var(--shadow-overlay);
   transform: none;
 }
 

@@ -148,3 +148,9 @@ test('«on» перед датой не остаётся в названии', (
   assert.equal(p('Party on nov 25').title, 'Party');
   assert.equal(p('Turn on 5 lamps').title, 'Turn on 5 lamps');
 });
+
+test('«к 25.11» и «до 25 ноября»: предлог уходит вместе со сроком', () => {
+  assert.deepEqual([p('Отчёт к 25.11').title, p('Отчёт к 25.11').due], ['Отчёт', '2026-11-25']);
+  assert.equal(p('Сдать до 25 ноября').title, 'Сдать');
+  assert.equal(p('Сдать проект').title, 'Сдать проект');
+});

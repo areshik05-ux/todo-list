@@ -171,3 +171,14 @@ test('испорченная запись: копия в запасной клю
   assert.deepEqual(loadTodosReport(memoryStorage()), { todos: [], corrupt: false });
   assert.deepEqual(loadTodosReport(brokenStorage), { todos: [], corrupt: false });
 });
+
+test('список без единой годной задачи тоже считается испорченным, копии не затираются', () => {
+  const storage = memoryStorage({ [STORAGE_KEY]: '[1,2,3]' });
+  assert.equal(loadTodosReport(storage).corrupt, true);
+  assert.equal(storage.raw.get(BACKUP_KEY), '[1,2,3]');
+  storage.setItem(STORAGE_KEY, '[{"title":"без id"}]');
+  assert.equal(loadTodosReport(storage).corrupt, true);
+  const extra = [...storage.raw.keys()].filter((k) => k.startsWith(BACKUP_KEY + ':'));
+  assert.equal(extra.length, 1, 'вторая порча в отдельной копии');
+  assert.equal(loadTodosReport(memoryStorage({ [STORAGE_KEY]: '[]' })).corrupt, false, 'пустой список не порча');
+});

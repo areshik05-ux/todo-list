@@ -253,8 +253,13 @@ function render(focus = currentFocus()) {
   restoreFocus(focus);
 }
 
+// Слова поиска, которые подсвечиваются в названии (метки с # не подсвечиваем).
+function queryWords() {
+  return query.toLowerCase().split(/\s+/).filter((w) => w && !w.startsWith('#'));
+}
+
 function highlight(target, text) {
-  const words = query.toLowerCase().split(/\s+/).filter((w) => w && !w.startsWith('#'));
+  const words = queryWords();
   if (!words.length) {
     target.textContent = text;
     return;
@@ -302,8 +307,17 @@ function patchChildren(parent, desired) {
 const rowCache = new Map(); // id → { key, li }
 
 function cachedItem(todo, today) {
-  if (editingId === todo.id) return renderItem(todo, today);
-  const key = JSON.stringify([todo, today, query, settings.lang, openDetails.has(todo.id), menu?.id === todo.id]);
+  if (editingId === todo.id) {
+    // открытый редактор не пересобираем: в нём то, что человек уже напечатал
+    const open = listWrap.querySelector(`.todo.is-editing[data-id="${CSS.escape(todo.id)}"]`);
+    if (!open) return renderItem(todo, today);
+    open.classList.toggle('is-done', todo.done);
+    $('.todo-check', open).checked = todo.done;
+    return open;
+  }
+  const lower = todo.title.toLowerCase();
+  const marks = queryWords().filter((w) => lower.includes(w));
+  const key = JSON.stringify([todo, today, marks, settings.lang, openDetails.has(todo.id), menu?.id === todo.id && menu.kind]);
   const hit = rowCache.get(todo.id);
   if (hit?.key === key && !hit.li.classList.contains('is-leaving')) return hit.li;
   const li = renderItem(todo, today);
@@ -329,7 +343,7 @@ function renderItem(todo, today) {
     btn.setAttribute('aria-label', t(`task.${key}Label`, { title: todo.title }));
     btn.title = t(`task.${key}`);
   }
-  if (menu?.id === todo.id) $('.todo-more', li).setAttribute('aria-expanded', 'true');
+  if (menu?.id === todo.id && menu.kind === 'more') $('.todo-more', li).setAttribute('aria-expanded', 'true');
 
   const body = $('.todo-body', li);
   if (editingId === todo.id) {
@@ -357,7 +371,7 @@ function renderItem(todo, today) {
     } else {
       due.type = 'button';
       due.setAttribute('aria-haspopup', 'menu');
-      due.setAttribute('aria-expanded', String(menu?.id === todo.id));
+      due.setAttribute('aria-expanded', String(menu?.id === todo.id && menu.kind === 'due'));
       due.setAttribute('aria-controls', 'row-menu');
       const date = i18n.groupDate(todo.due, today);
       due.setAttribute('aria-label', t('task.dueButton', { date }) + (overdue ? `, ${t('task.overdue')}` : ''));
@@ -461,7 +475,7 @@ function renderDetails(todo) {
     box.append(ul);
   }
   // новый шаг прямо в списке: Enter добавляет и оставляет курсор для следующего
-  if (!todo.done && todo.steps.length < MAX_STEPS) {
+  if (!todo.done) {
     const add = document.createElement('div');
     add.className = 'step-add step-add-inline';
     const field = document.createElement('input');
@@ -497,10 +511,8 @@ function addStepsInline(field, text) {
     announce(t('steps.added', { step: next.find((x) => x.id === id).steps.at(-1).title }));
   }
   if (!rest.length) return;
-  // не влезло в лимит: строки остаются в поле, ничего не теряется молча
-  const field2 = listWrap.querySelector(`.todo[data-id="${CSS.escape(id)}"] .details-step-new`) ?? field;
-  field2.value = rest.join(' ');
-  showToast(t('steps.limit', { n: MAX_STEPS }));
+  // не влезло в лимит: говорим, сколько именно
+  showToast(t('steps.limit', { n: MAX_STEPS, m: rest.length }));
 }
 
 function renderEditor(todo) {
@@ -511,6 +523,8 @@ function renderEditor(todo) {
   editor.elements.priority.value = String(todo.priority);
   editor.elements.tags.value = todo.tags.join(' ');
   editor.elements.repeat.value = todo.repeat ?? '';
+  // у еженедельной задачи в списке виден её день: «По пятницам»
+  if (todo.repeat === 'week') $('option[value="week"]', editor).textContent = repeatLabel('week', todo.repeatDay, todo.due);
   editor.elements.notes.value = todo.notes;
   $('.step-list', editor).append(...todo.steps.map((step) => stepEditRow(step)));
   numberSteps(editor);
@@ -553,7 +567,7 @@ function addStepFromInput(field) {
   const editor = field.closest('.editor');
   if (!field.value.trim()) return false;
   if ($$('.step-edit', editor).length >= MAX_STEPS) {
-    showToast(t('steps.limit', { n: MAX_STEPS }));
+    showToast(t('steps.limit', { n: MAX_STEPS, m: 1 }));
     return false;
   }
   const row = stepEditRow({ title: field.value, done: false });
@@ -709,6 +723,7 @@ form.addEventListener('submit', (e) => {
     input.setAttribute('aria-invalid', 'true');
     hint.classList.add('is-error');
     hint.textContent = `${t('add.empty')}.`;
+    announce(t('add.empty'));
     input.focus();
     return;
   }
@@ -747,6 +762,7 @@ function toggle(li) {
     clearTimeout(lingering.get(id));
     lingering.delete(id);
     commit(toggleTodo(todos, id), { focus });
+    showToast(t('toast.reopened', { title: before.title }), { snapshot, focus: { id, selector: '.todo-check' } });
     return;
   }
   if (hidesDone) {
@@ -804,7 +820,7 @@ function openMenu(opener) {
   const li = opener.closest('.todo');
   if (menu?.id === li.dataset.id) return closeMenu(true);
   closeMenu(false);
-  menu = { id: li.dataset.id, opener };
+  menu = { id: li.dataset.id, opener, kind: opener.matches('.meta-due') ? 'due' : 'more' };
   opener.setAttribute('aria-expanded', 'true');
   const todo = todos.find((x) => x.id === menu.id);
   rowMenu.setAttribute('aria-label', t('menu.label', { title: todo?.title ?? '' }));
@@ -849,7 +865,7 @@ function closeMenu(returnFocus) {
   const selector = opener.matches('.meta-due') ? 'button.meta-due' : '.todo-more';
   const row = listWrap.querySelector(`.todo[data-id="${CSS.escape(id)}"]`);
   const current = opener.isConnected ? opener : row && ($(selector, row) ?? $('.todo-more', row));
-  current?.setAttribute('aria-expanded', 'false');
+  for (const btn of row ? $$('[aria-haspopup="menu"]', row) : [current]) btn?.setAttribute('aria-expanded', 'false');
   if (returnFocus) current?.focus();
 }
 
@@ -902,7 +918,23 @@ document.addEventListener('pointerdown', (e) => {
   if (menu && !rowMenu.contains(e.target) && !menu.opener.contains(e.target)) closeMenu(false);
 });
 window.addEventListener('resize', () => closeMenu(false));
-document.addEventListener('scroll', () => closeMenu(false), { passive: true });
+// Страница прокрутилась (сама после перерисовки или пальцем): меню едет за
+// своей кнопкой и закрывается, только когда кнопка ушла с экрана.
+document.addEventListener('scroll', () => {
+  if (!menu) return;
+  const opener = menuOpener();
+  if (!opener) return closeMenu(false);
+  menu.opener = opener;
+  const r = opener.getBoundingClientRect();
+  if (r.bottom < 0 || r.top > innerHeight) return closeMenu(false);
+  return placeMenu();
+}, { passive: true });
+
+function menuOpener() {
+  if (menu.opener.isConnected) return menu.opener;
+  const row = listWrap.querySelector(`.todo[data-id="${CSS.escape(menu.id)}"]`);
+  return row && $(menu.kind === 'due' ? 'button.meta-due' : '.todo-more', row);
+}
 
 // Отмеченная задача немного стоит на месте с галочкой и только потом уходит.
 function leave(id) {
@@ -953,7 +985,8 @@ function editedTodos() {
     today: todayKey(),
   };
   // срок и повтор не трогали: день недели повтора остаётся прежним
-  if (changes.due === original.due && changes.repeat === original.repeat) changes.repeatDay = original.repeatDay;
+  // повтор не меняли: «по пятницам» остаётся по пятницам, даже если этот раз перенесли
+  if (changes.repeat === original.repeat) changes.repeatDay = original.repeatDay;
   const next = updateTodo(todos, editingId, changes);
   // пометка примера не считается правкой: открыли и закрыли пример, он остался примером
   const before = JSON.stringify({ ...original, sample: undefined });
@@ -1052,14 +1085,14 @@ listWrap.addEventListener('paste', (e) => {
     return;
   }
   const lines = text.split(/\r?\n/).filter((line) => line.trim());
-  let added = 0;
-  for (const line of lines) {
+  const editor = field.closest('.editor');
+  const room = Math.max(0, MAX_STEPS - $$('.step-edit', editor).length);
+  for (const line of lines.slice(0, room)) {
     field.value = line;
-    if (!addStepFromInput(field)) break;
-    added += 1;
+    addStepFromInput(field);
   }
-  // что не влезло, остаётся в поле
-  field.value = lines.slice(added).join(' ');
+  field.value = '';
+  if (lines.length > room) showToast(t('steps.limit', { n: MAX_STEPS, m: lines.length - room }));
 });
 
 listWrap.addEventListener('dblclick', (e) => {
@@ -1228,8 +1261,11 @@ function dropUndo() {
 
 function applyUndo() {
   if (!undo?.snapshot) return;
-  const { snapshot, focus } = undo;
-  editingId = null;
+  const { snapshot: raw, focus } = undo;
+  // примеры возвращаются на текущем языке интерфейса
+  const snapshot = translateSamples(raw, t);
+  // редактор остаётся открытым с тем, что в нём набрано, если задача на месте
+  if (editingId && !snapshot.some((x) => x.id === editingId)) editingId = null;
   for (const timer of lingering.values()) clearTimeout(timer);
   lingering.clear();
   commit(snapshot, { focus: focus ?? undefined });
@@ -1296,7 +1332,13 @@ sortSelect.addEventListener('change', () => {
   render();
 });
 
+$('.skip-link').addEventListener('click', (e) => {
+  e.preventDefault();
+  input.focus();
+});
+
 window.addEventListener('hashchange', () => {
+  if (location.hash && !location.hash.startsWith('#/')) return;
   view = viewFromHash();
   editingId = null;
   closeMenu(false);
@@ -1325,6 +1367,7 @@ for (const btn of $$('[data-lang]')) {
     if (settings.lang === btn.dataset.lang) return;
     settings.lang = btn.dataset.lang;
     saveSettings(settings);
+    dropUndo();
     applyLanguage();
     const translated = translateSamples(todos, t);
     if (translated !== todos) {

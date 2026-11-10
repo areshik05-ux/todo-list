@@ -244,3 +244,12 @@ test('вставка списка в шаги: строка = шаг, лишне
   assert.equal(res.rest.length, 35 - (MAX_STEPS - 1));
   assert.equal(res.rest[0], `шаг ${MAX_STEPS - 1}`);
 });
+
+test('снятие отметки не удаляет следующий раз, если его уже поправили', () => {
+  const { todos, next } = completeTodo([make('r', { due: TODAY, repeat: 'day' })], 'r', TODAY, NOON);
+  const edited = updateTodo(todos, next.id, { notes: 'важная заметка' });
+  const back = toggleTodo(edited, 'r');
+  assert.equal(back.length, 2, 'правленый следующий раз остаётся');
+  assert.equal(back.find((t) => t.id === next.id).notes, 'важная заметка');
+  assert.equal(back.find((t) => t.id === 'r').repeat, null, 'повтор остаётся у следующего раза, а не у двух задач');
+});

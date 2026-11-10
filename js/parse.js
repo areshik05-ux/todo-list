@@ -63,10 +63,10 @@ const DATE_RULES = [
   ]),
   // 25.11, 25.11.2026, 25/11. Месяц строго двумя цифрами, чтобы «1.5 литра» не стало 1 мая.
   // «on» перед датой тоже срезаем: «pay rent on 25.11» → «pay rent».
-  [re('(?:on )?(\\d{1,2})[./](\\d{2})(?:[./](\\d{4}))?'),
+  [re('(?:on |к |до )?(\\d{1,2})[./](\\d{2})(?:[./](\\d{4}))?'),
     (m, t) => dayMonthKey(t, Number(m[1]), Number(m[2]), m[3] ? Number(m[3]) : undefined)],
   // 25 ноября, 25 nov, 25 november 2026
-  [re(`(?:on )?(\\d{1,2}) (${MONTH_RU}|${MONTH_EN})(?: (\\d{4}))?`),
+  [re(`(?:on |к |до )?(\\d{1,2}) (${MONTH_RU}|${MONTH_EN})(?: (\\d{4}))?`),
     (m, t) => dayMonthKey(t, Number(m[1]), monthIndex(m[2]), m[3] ? Number(m[3]) : undefined)],
   // nov 25, november 25
   [re(`(?:on )?(${MONTH_EN_LEAD}) (\\d{1,2})(?: (\\d{4}))?`),

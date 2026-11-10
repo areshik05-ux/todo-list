@@ -83,6 +83,11 @@ export function addTodo(todos, fields, now = Date.now()) {
   return [todo, ...todos];
 }
 
+// Отпечаток задачи: по нему видно, трогал ли человек следующий раз повтора.
+export const fingerprint = (t) => JSON.stringify([
+  t.title, t.due, t.priority, t.tags, t.notes, t.steps.map((s) => [s.title, s.done]), t.repeat, t.repeatDay,
+]);
+
 // Снять или поставить отметку. Сняли отметку со сделанного раза повторяющейся
 // задачи: следующий раз, если его ещё не трогали, убираем, а повтор возвращаем,
 // чтобы не осталось двух открытых копий.
@@ -92,7 +97,7 @@ export function toggleTodo(todos, id, now = Date.now()) {
   if (!todo.done) return todos.map((t) => (t.id === id ? { ...own(t), done: true, completedAt: now } : t));
   const { series, ...rest } = own(todo);
   const reopened = { ...rest, done: false, completedAt: null };
-  const next = series && todos.find((t) => t.id === series.next && !t.done);
+  const next = series && todos.find((t) => t.id === series.next && !t.done && (!series.fp || fingerprint(t) === series.fp));
   if (series && next) {
     reopened.repeat = series.repeat;
     reopened.repeatDay = series.repeatDay;
@@ -119,7 +124,7 @@ export function completeTodo(todos, id, today, now = Date.now()) {
     due: nextDue(todo.repeat, todo.due, today, todo.repeatDay),
     steps: todo.steps.map((s) => ({ ...s, done: false })),
   };
-  done.series = { repeat: todo.repeat, repeatDay: todo.repeatDay, next: next.id };
+  done.series = { repeat: todo.repeat, repeatDay: todo.repeatDay, next: next.id, fp: fingerprint(next) };
   return { todos: [...todos.slice(0, index), next, done, ...todos.slice(index + 1)], next };
 }
 
