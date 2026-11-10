@@ -99,3 +99,36 @@ test('крестик на чипе: слово остаётся в назван�
   const r = parseQuickAdd('Фильм Послезавтра !2', TODAY, { ignore: ['Послезавтра'] });
   assert.deepEqual([r.title, r.due, r.priority], ['Фильм Послезавтра', null, 2]);
 });
+
+test('повтор в быстром вводе на двух языках', () => {
+  const cases = {
+    'Зарядка каждый день': ['Зарядка', 'day', TODAY],
+    'Пить воду ежедневно': ['Пить воду', 'day', TODAY],
+    'Отчёт по будням': ['Отчёт', 'weekday', TODAY],
+    'Планёрка каждый понедельник': ['Планёрка', 'week', '2026-11-16'],
+    'Созвон каждый вторник': ['Созвон', 'week', TODAY],
+    'Уборка каждую субботу': ['Уборка', 'week', '2026-11-14'],
+    'Аренда каждый месяц 25.11': ['Аренда', 'month', '2026-11-25'],
+    'Water plants every monday': ['Water plants', 'week', '2026-11-16'],
+    'Stretch every day': ['Stretch', 'day', TODAY],
+    'Taxes every year': ['Taxes', 'year', TODAY],
+  };
+  for (const [text, [title, repeat, due]] of Object.entries(cases)) {
+    const r = p(text);
+    assert.deepEqual([r.title, r.repeat, r.due], [title, repeat, due], text);
+  }
+  assert.ok(p('Зарядка каждый день').tokens.some((t) => t.type === 'repeat'));
+});
+
+test('похожие слова не превращаются в повтор, крестик снимает повтор', () => {
+  for (const text of ['Read the Daily Mail', 'Weekly report draft']) assert.equal(p(text).repeat, null, text);
+  const r = parseQuickAdd('Йога каждый день', TODAY, { ignore: ['каждый день'] });
+  assert.deepEqual([r.title, r.repeat, r.due], ['Йога каждый день', null, null]);
+  assert.deepEqual([p('каждый день').title, p('каждый день').repeat], ['каждый день', null]);
+});
+
+test('«каждый день рождения» и «every weekday» не путаются с другими повторами', () => {
+  assert.equal(p('Подарок на каждый день рождения').repeat, null);
+  assert.equal(p('Report every weekday').repeat, 'weekday');
+  assert.equal(p('Every day of the week').repeat, null);
+});

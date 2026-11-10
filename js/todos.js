@@ -4,8 +4,11 @@
 
 import { isDateKey } from './dates.js';
 import { normalizeTags } from './parse.js';
+import { isRepeat, firstDue, nextDue } from './repeat.js';
 
 export const MAX_TITLE_LENGTH = 200;
+export const MAX_NOTES_LENGTH = 2000;
+export const MAX_STEPS = 30;
 export const PRIORITIES = [0, 1, 2, 3]; // 0 без приоритета, 1 самый высокий
 
 export function normalizeTitle(text) {
@@ -19,22 +22,52 @@ function makeId() {
 
 const cleanDue = (due) => (isDateKey(due) ? due : null);
 const cleanPriority = (p) => (PRIORITIES.includes(Number(p)) ? Number(p) : 0);
+const cleanRepeat = (r) => (isRepeat(r) ? r : null);
+
+// Заметка: переносы строк сохраняем, пустые хвосты убираем.
+export function normalizeNotes(text) {
+  return String(text ?? '').replace(/\r\n?/g, '\n').replace(/[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n')
+    .trim().slice(0, MAX_NOTES_LENGTH);
+}
+
+// Шаги внутри задачи (чек-лист). Пустые выбрасываем, id не повторяются.
+export function normalizeSteps(list) {
+  const out = [];
+  const seen = new Set();
+  for (const raw of Array.isArray(list) ? list : []) {
+    if (!raw || typeof raw !== 'object') continue;
+    const title = normalizeTitle(raw.title);
+    if (!title) continue;
+    let id = typeof raw.id === 'string' && raw.id && raw.id.length <= 100 ? raw.id : makeId();
+    if (seen.has(id)) id = makeId();
+    seen.add(id);
+    out.push({ id, title, done: raw.done === true });
+    if (out.length === MAX_STEPS) break;
+  }
+  return out;
+}
 
 export function addTodo(todos, fields, now = Date.now()) {
-  const { title: rawTitle, due = null, priority = 0, tags = [] } =
-    typeof fields === 'string' ? { title: fields } : fields;
+  const {
+    title: rawTitle, due = null, priority = 0, tags = [], notes = '', steps = [], repeat = null, today = null, sample = false,
+  } = typeof fields === 'string' ? { title: fields } : fields;
   const title = normalizeTitle(rawTitle);
   if (!title) return todos;
+  const rep = cleanRepeat(repeat);
   const todo = {
     id: makeId(),
     title,
     done: false,
     createdAt: now,
     completedAt: null,
-    due: cleanDue(due),
+    due: cleanDue(due) ?? (rep && today ? firstDue(rep, today) : null),
     priority: cleanPriority(priority),
     tags: normalizeTags(tags),
+    notes: normalizeNotes(notes),
+    steps: normalizeSteps(steps),
+    repeat: rep,
   };
+  if (sample) todo.sample = true; // пример с первого визита, см. samples.js
   return [todo, ...todos];
 }
 
@@ -42,6 +75,49 @@ export function toggleTodo(todos, id, now = Date.now()) {
   return todos.map((t) => (t.id === id
     ? { ...t, done: !t.done, completedAt: t.done ? null : now }
     : t));
+}
+
+// Отметить выполненной. У повторяющейся задачи сделанная копия уходит в «Готово»
+// (там видна история), а на её месте встаёт следующий раз с новым сроком и
+// неотмеченными шагами. Возвращает список и следующую задачу (или null).
+export function completeTodo(todos, id, today, now = Date.now()) {
+  const index = todos.findIndex((t) => t.id === id);
+  const todo = todos[index];
+  if (!todo || todo.done) return { todos, next: null };
+  const done = { ...todo, done: true, completedAt: now, repeat: null };
+  if (!todo.repeat) return { todos: [...todos.slice(0, index), done, ...todos.slice(index + 1)], next: null };
+  const next = {
+    ...todo,
+    id: makeId(),
+    createdAt: now,
+    due: nextDue(todo.repeat, todo.due, today),
+    steps: todo.steps.map((s) => ({ ...s, done: false })),
+  };
+  return { todos: [...todos.slice(0, index), next, done, ...todos.slice(index + 1)], next };
+}
+
+export function toggleStep(todos, id, stepId) {
+  return todos.map((t) => (t.id === id
+    ? { ...t, steps: t.steps.map((s) => (s.id === stepId ? { ...s, done: !s.done } : s)) }
+    : t));
+}
+
+// Шаги из вставленного текста: каждая непустая строка становится шагом.
+export function addSteps(todos, id, text) {
+  const titles = String(text ?? '').split(/\r?\n/).map(normalizeTitle).filter(Boolean);
+  if (!titles.length) return todos;
+  return todos.map((t) => (t.id === id
+    ? { ...t, steps: normalizeSteps([...t.steps, ...titles.map((title) => ({ title, done: false }))]) }
+    : t));
+}
+
+export function stepProgress(todo) {
+  return { done: todo.steps.filter((s) => s.done).length, total: todo.steps.length };
+}
+
+// Просроченное одним нажатием на сегодня: без чувства вины за кучу красного.
+export function rescheduleOverdue(todos, today) {
+  return todos.map((t) => (!t.done && t.due !== null && t.due < today ? { ...t, due: today } : t));
 }
 
 // Правка любых полей. Пустое название не сохраняем: задача без названия бессмысленна.
@@ -56,12 +132,23 @@ export function updateTodo(todos, id, changes) {
     if ('due' in changes) next.due = cleanDue(changes.due);
     if ('priority' in changes) next.priority = cleanPriority(changes.priority);
     if ('tags' in changes) next.tags = normalizeTags(changes.tags);
+    if ('notes' in changes) next.notes = normalizeNotes(changes.notes);
+    if ('steps' in changes) next.steps = normalizeSteps(changes.steps);
+    if ('repeat' in changes) next.repeat = cleanRepeat(changes.repeat);
+    // повтор без срока не имеет смысла: начинаем с сегодня
+    if (next.repeat && !next.due && changes.today) next.due = firstDue(next.repeat, changes.today);
+    // пример, который человек поправил под себя, больше не пример
+    if ('sample' in changes && !changes.sample) delete next.sample;
     return next;
   });
 }
 
 export function removeTodo(todos, id) {
   return todos.filter((t) => t.id !== id);
+}
+
+export function removeSamples(todos) {
+  return todos.filter((t) => !t.sample);
 }
 
 export function clearCompleted(todos) {
@@ -151,7 +238,9 @@ export function matchesQuery(todo, query) {
       return todo.tags.some((tag) => tag.toLowerCase() === word.slice(1));
     }
     return todo.title.toLowerCase().includes(word)
-      || todo.tags.some((tag) => tag.toLowerCase().includes(word));
+      || todo.tags.some((tag) => tag.toLowerCase().includes(word))
+      || todo.notes.toLowerCase().includes(word)
+      || todo.steps.some((s) => s.title.toLowerCase().includes(word));
   });
 }
 

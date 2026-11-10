@@ -54,3 +54,23 @@ export function dayMonthKey(today, day, month, year) {
   if (year === undefined && key < today) return dayMonthKey(today, day, month, y + 1);
   return key;
 }
+
+// День недели ключа: 0 = воскресенье.
+export function weekdayOf(key) {
+  return fromKey(key).getDay();
+}
+
+// Плюс n месяцев с тем же числом; 31 января + 1 месяц = 28 (29) февраля.
+export function addMonths(key, months) {
+  const date = fromKey(key);
+  const day = date.getDate();
+  const target = new Date(date.getFullYear(), date.getMonth() + months, 1, 12);
+  const last = new Date(target.getFullYear(), target.getMonth() + 1, 0, 12).getDate();
+  target.setDate(Math.min(day, last));
+  return toKey(target);
+}
+
+// Ближайший понедельник после сегодняшнего: «на следующей неделе».
+export function nextMonday(today) {
+  return nextWeekday(today, 1);
+}

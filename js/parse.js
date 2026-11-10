@@ -2,7 +2,8 @@
 // Слова про срок, приоритет и метки вырезаются из названия и становятся полями задачи.
 // Понимаем русский и английский одновременно, независимо от языка интерфейса.
 
-import { addDays, dayMonthKey, nextWeekday } from './dates.js';
+import { addDays, dayMonthKey, nextWeekday, weekdayOf } from './dates.js';
+import { firstDue } from './repeat.js';
 
 export const MAX_TAGS = 5;
 export const MAX_TAG_LENGTH = 30;
@@ -71,6 +72,28 @@ const DATE_RULES = [
     (m, t) => dayMonthKey(t, Number(m[2]), monthIndex(m[1]), m[3] ? Number(m[3]) : undefined)],
 ];
 
+// Повтор: «каждый день», «по будням», «каждую пятницу», «every monday».
+// Одиночные daily/weekly не берём: «Daily Mail» не повтор.
+const REPEAT_WEEKDAYS = [
+  [1, 'каждый понедельник', 'monday'],
+  [2, 'каждый вторник', 'tuesday'],
+  [3, 'каждую среду', 'wednesday'],
+  [4, 'каждый четверг', 'thursday'],
+  [5, 'каждую пятницу', 'friday'],
+  [6, 'каждую субботу', 'saturday'],
+  [0, 'каждое воскресенье', 'sunday'],
+];
+const sameOrNextWeekday = (today, day) => (weekdayOf(today) === day ? today : nextWeekday(today, day));
+const REPEAT_RULES = [
+  // «каждый день рождения» не повтор
+  [re('каждый день(?! рождения)|ежедневно|every day(?! of)|everyday'), 'day', (t) => firstDue('day', t)],
+  [re('по будням|каждый будний день|every weekday|on weekdays'), 'weekday', (t) => firstDue('weekday', t)],
+  [re('каждую неделю|еженедельно|every week'), 'week', (t) => t],
+  [re('каждый месяц|ежемесячно|every month'), 'month', (t) => t],
+  [re('каждый год|ежегодно|every year'), 'year', (t) => t],
+  ...REPEAT_WEEKDAYS.map(([day, ru, en]) => [re(`${ru}|every ${en}`), 'week', (t) => sameOrNextWeekday(t, day)]),
+];
+
 const PRIORITY_RE = re('!([1-3])|p([1-3])');
 const TAG_RE = /(?<![\p{L}\p{N}_#])#([\p{L}\p{N}_-]{1,30})(?![\p{L}\p{N}_-])/gu;
 
@@ -89,7 +112,7 @@ const overlaps = (a, b) => a.start < b.end && b.start < a.end;
 
 /**
  * @returns {{ title: string, due: string|null, priority: 0|1|2|3, tags: string[],
- *   tokens: Array<{ type: 'date'|'priority'|'tag', text: string, value: any }> }}
+ *   repeat: string|null, tokens: Array<{ type: 'date'|'priority'|'tag'|'repeat', text: string, value: any }> }}
  */
 // ignore: слова, которые пользователь попросил не распознавать (крестик на чипе).
 export function parseQuickAdd(input, today, { ignore = [] } = {}) {
@@ -104,6 +127,20 @@ export function parseQuickAdd(input, today, { ignore = [] } = {}) {
     tokens.push({ type, text: match.text, value: match.value, start: match.start });
     return true;
   };
+
+  // Повтор разбираем раньше срока: в «каждый понедельник» слово «понедельник» не отдельный срок.
+  let repeat = null;
+  let repeatStart = null;
+  const repeats = REPEAT_RULES
+    .flatMap(([regex, kind, start]) => collect(regex, text, () => ({ kind, start: start(today) })))
+    .sort((a, b) => a.start - b.start);
+  for (const r of repeats) {
+    if (accept('repeat', { ...r, value: r.value.kind })) {
+      repeat = r.value.kind;
+      repeatStart = r.value.start;
+      break;
+    }
+  }
 
   // Срок: берём самое раннее упоминание в строке, остальное остаётся текстом.
   const dates = DATE_RULES
@@ -138,11 +175,12 @@ export function parseQuickAdd(input, today, { ignore = [] } = {}) {
   // Если вся строка состояла из служебных слов («завтра»), не теряем её:
   // считаем это названием, а не сроком.
   if (!title) {
-    return { title: text.replace(/\s+/g, ' ').trim(), due: null, priority: 0, tags: [], tokens: [] };
+    return { title: text.replace(/\s+/g, ' ').trim(), due: null, priority: 0, tags: [], repeat: null, tokens: [] };
   }
+  if (repeat && !due) due = repeatStart;
 
   tokens.sort((a, b) => a.start - b.start);
-  return { title, due, priority, tags, tokens: tokens.map(({ start, ...rest }) => rest) };
+  return { title, due, priority, tags, repeat, tokens: tokens.map(({ start, ...rest }) => rest) };
 }
 
 export function normalizeTags(list) {

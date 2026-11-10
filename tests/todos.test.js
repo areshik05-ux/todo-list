@@ -4,6 +4,8 @@ import {
   addTodo, toggleTodo, updateTodo, removeTodo, clearCompleted,
   moveTodo, moveTodoAfter, moveWithin, inView, countViews, todayProgress, matchesQuery,
   sortTodos, sortDone, normalizeTitle, MAX_TITLE_LENGTH,
+  completeTodo, toggleStep, stepProgress, rescheduleOverdue, normalizeNotes, normalizeSteps, MAX_STEPS,
+  removeSamples, addSteps,
 } from '../js/todos.js';
 import { toKey } from '../js/dates.js';
 
@@ -12,7 +14,7 @@ const dayKeyOf = (ms) => toKey(new Date(ms));
 const NOON = new Date(2026, 10, 10, 12).getTime();
 
 const make = (id, extra = {}) => ({
-  id, title: id, done: false, createdAt: 0, completedAt: null, due: null, priority: 0, tags: [], ...extra,
+  id, title: id, done: false, createdAt: 0, completedAt: null, due: null, priority: 0, tags: [], notes: '', steps: [], repeat: null, ...extra,
 });
 
 test('новая задача встаёт в начало списка и не выполнена', () => {
@@ -136,4 +138,83 @@ test('сортировка по сроку и приоритету устойч�
 test('выполненные идут от последних', () => {
   const done = [make('a', { completedAt: 1 }), make('b', { completedAt: 3 }), make('c', { completedAt: 2 })];
   assert.deepEqual(sortDone(done).map((t) => t.id), ['b', 'c', 'a']);
+});
+
+test('повторяющаяся задача: сделанная копия уходит в «Готово», следующий раз встаёт на её место', () => {
+  const list = [make('a'), make('r', { due: TODAY, repeat: 'week', steps: [{ id: 's1', title: 'шаг', done: true }] }), make('b')];
+  const { todos, next } = completeTodo(list, 'r', TODAY, NOON);
+  assert.deepEqual(todos.map((t) => t.id), ['a', next.id, 'r', 'b']);
+  assert.deepEqual([next.due, next.repeat, next.done, next.steps[0].done], ['2026-11-17', 'week', false, false]);
+  const done = todos.find((t) => t.id === 'r');
+  assert.deepEqual([done.done, done.completedAt, done.repeat], [true, NOON, null]);
+  assert.equal(list[1].done, false, 'исходный массив не меняется');
+});
+
+test('обычная задача отмечается без копии, повторная отметка ничего не делает', () => {
+  const { todos, next } = completeTodo([make('a')], 'a', TODAY, NOON);
+  assert.equal(next, null);
+  assert.deepEqual([todos.length, todos[0].done], [1, true]);
+  assert.equal(completeTodo(todos, 'a', TODAY).todos, todos);
+});
+
+test('новая повторяющаяся задача без срока начинается сегодня', () => {
+  const [a] = addTodo([], { title: 'Зарядка', repeat: 'day', today: TODAY });
+  assert.deepEqual([a.due, a.repeat], [TODAY, 'day']);
+  const [b] = addTodo([], { title: 'x', repeat: 'hourly', today: TODAY });
+  assert.deepEqual([b.due, b.repeat], [null, null]);
+  const edited = updateTodo([make('c')], 'c', { repeat: 'weekday', today: '2026-11-14' });
+  assert.deepEqual([edited[0].due, edited[0].repeat], ['2026-11-16', 'weekday']);
+});
+
+test('шаги: отметка, прогресс, чистка и лимит', () => {
+  const list = [make('a', { steps: [{ id: 's1', title: 'один', done: false }, { id: 's2', title: 'два', done: true }] })];
+  assert.deepEqual(stepProgress(list[0]), { done: 1, total: 2 });
+  assert.deepEqual(stepProgress(toggleStep(list, 'a', 's1')[0]), { done: 2, total: 2 });
+  const clean = normalizeSteps([{ id: 'x', title: '  ' }, { id: 'x', title: 'a' }, { id: 'x', title: 'b' }, null, 'str']);
+  assert.equal(clean.length, 2);
+  assert.notEqual(clean[0].id, clean[1].id, 'повторный id заменяется');
+  assert.equal(normalizeSteps(Array.from({ length: 50 }, (_, i) => ({ title: String(i) }))).length, MAX_STEPS);
+});
+
+test('заметка: переносы строк сохраняются, лишние пустые строки убираются', () => {
+  assert.equal(normalizeNotes('  строка 1  \r\n\n\n\nстрока 2\t '), 'строка 1\n\nстрока 2');
+  assert.equal(normalizeNotes(null), '');
+});
+
+test('поиск находит слова в заметке и шагах', () => {
+  const todo = make('a', { title: 'Переезд', notes: 'Позвонить грузчикам', steps: [{ id: 's', title: 'Коробки', done: false }] });
+  assert.equal(matchesQuery(todo, 'грузчик'), true);
+  assert.equal(matchesQuery(todo, 'коробки'), true);
+});
+
+test('просроченное одним нажатием на сегодня', () => {
+  const list = [make('old', { due: '2026-11-01' }), make('fut', { due: '2026-11-20' }), make('doneOld', { due: '2026-11-01', done: true })];
+  assert.deepEqual(rescheduleOverdue(list, TODAY).map((t) => t.due), [TODAY, '2026-11-20', '2026-11-01']);
+});
+
+test('отмена после отметки повторяющейся задачи: снова одна открытая задача, в «Готово» пусто', () => {
+  const list = [make('r', { due: TODAY, repeat: 'day' })];
+  const snapshot = list;
+  const { todos } = completeTodo(list, 'r', TODAY, NOON);
+  assert.equal(todos.length, 2);
+  // «Вернуть» возвращает снимок до действия
+  assert.deepEqual(snapshot.filter((t) => !t.done).length, 1);
+  assert.equal(snapshot.filter((t) => t.done).length, 0);
+});
+
+test('примеры: убираются одной кнопкой, правка делает пример обычной задачей', () => {
+  const [a, b] = addTodo(addTodo([], { title: 'пример', sample: true }), 'своя');
+  assert.equal(b.sample, true);
+  assert.equal('sample' in a, false);
+  assert.deepEqual(removeSamples([a, b]).map((t) => t.title), ['своя']);
+  assert.equal('sample' in updateTodo([b], b.id, { title: 'моя', sample: false })[0], false);
+  const { next } = completeTodo([{ ...b, due: TODAY, repeat: 'day' }], b.id, TODAY);
+  assert.equal(next.sample, true, 'следующий раз примера тоже пример');
+});
+
+test('вставка списка в шаги: строка = шаг', () => {
+  const list = [make('a', { steps: [{ id: 's', title: 'было', done: true }] })];
+  const next = addSteps(list, 'a', 'Паспорт\r\n\n  Билеты  \nЗарядка');
+  assert.deepEqual(next[0].steps.map((s) => s.title), ['было', 'Паспорт', 'Билеты', 'Зарядка']);
+  assert.equal(addSteps(list, 'a', ' \n '), list);
 });

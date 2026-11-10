@@ -1,4 +1,5 @@
-import { normalizeTitle, PRIORITIES } from './todos.js';
+import { normalizeTitle, normalizeNotes, normalizeSteps, PRIORITIES } from './todos.js';
+import { isRepeat } from './repeat.js';
 import { isDateKey } from './dates.js';
 import { normalizeTags } from './parse.js';
 
@@ -33,6 +34,11 @@ export function cleanTodo(t) {
     due: isDateKey(t.due) ? t.due : null,
     priority: PRIORITIES.includes(Number(t.priority)) ? Number(t.priority) : 0,
     tags: Array.isArray(t.tags) ? normalizeTags(t.tags) : [],
+    notes: typeof t.notes === 'string' ? normalizeNotes(t.notes) : '',
+    steps: normalizeSteps(t.steps),
+    // у сделанной задачи повтора нет: следующий раз уже создан отдельной задачей
+    repeat: !done && isRepeat(t.repeat) && isDateKey(t.due) ? t.repeat : null,
+    ...(t.sample === true ? { sample: true } : {}),
   };
 }
 
@@ -60,8 +66,19 @@ export function parseTodos(raw) {
   }
 }
 
+export const DATA_VERSION = 3;
+
 export function serialize(todos) {
-  return JSON.stringify({ version: 2, todos });
+  return JSON.stringify({ version: DATA_VERSION, todos });
+}
+
+// Первый визит: ни v2, ни v1 в хранилище нет. Тогда показываем примеры задач.
+export function isFirstVisit(storage) {
+  try {
+    return local(storage).getItem(STORAGE_KEY) === null && local(storage).getItem(LEGACY_KEY) === null;
+  } catch {
+    return false;
+  }
 }
 
 export function loadTodos(storage) {
@@ -135,7 +152,7 @@ export function saveSettings(settings, storage) {
 /* Экспорт и импорт */
 
 export function exportJSON(todos, now = new Date()) {
-  return JSON.stringify({ app: 'todo-list', version: 2, exportedAt: now.toISOString(), todos }, null, 2);
+  return JSON.stringify({ app: 'todo-list', version: DATA_VERSION, exportedAt: now.toISOString(), todos }, null, 2);
 }
 
 // Импортированные задачи заменяют задачи с тем же id, новые встают сверху.
