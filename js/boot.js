@@ -9,8 +9,18 @@
   }
   var root = document.documentElement;
   root.dataset.theme = settings.theme === 'dark' ? 'dark' : 'light';
+  // цвет верхней полосы браузера на телефоне = --surface темы (css/theme.css)
+  var BAR = { light: '#ffffff', dark: '#151921' };
   var meta = document.querySelector('meta[name="theme-color"]');
-  if (meta && settings.theme === 'dark') meta.content = '#111416';
+  function syncBar() {
+    var color = BAR[root.dataset.theme] || BAR.light;
+    if (meta && meta.content !== color) meta.content = color;
+  }
+  syncBar();
+  // тема переключается кнопкой в app.js: полоса меняется вслед за data-theme
+  if (window.MutationObserver) {
+    new MutationObserver(syncBar).observe(root, { attributes: true, attributeFilter: ['data-theme'] });
+  }
   // язык как в i18n.js detectLang: русский для ru/be/uk/kk, иначе английский
   var lang = settings.lang;
   if (lang !== 'ru' && lang !== 'en') {

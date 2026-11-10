@@ -1,0 +1,138 @@
+/* Цвета и общие токены. Подключается раньше style.css: все цвета сайта живут только здесь.
+   Палитра v4: белая основа, один голубой (кобальт) и один розовый (малиновый).
+   Голубой = действие и ориентир: кнопки, фокус, «Сегодня», ссылки, дуга прогресса.
+   Розовый = важное и сделанное: P1, галочка выполненного, полное кольцо, «день закрыт».
+   Голубой и розовый не встречаются в одном градиенте и не стоят кнопками рядом.
+   Числа в комментариях: контраст по WCAG 2.2 (текст от 4.5:1, элементы управления и фокус от 3:1). */
+
+:root {
+  color-scheme: light;
+
+  /* нейтральные, чуть холодные */
+  --bg: #f4f6f9;          /* боковая панель, край холста */
+  --surface: #ffffff;     /* основная колонка, карточки, меню: белая основа */
+  --raised: #ffffff;      /* в светлой теме карточки = surface, в тёмной светлее */
+  --sunk: #f7f8fa;        /* поля, дорожка недели, kbd */
+  --hover: #eef1f5;       /* наведение на строку и пункт меню */
+  --line: #e2e6ec;        /* тонкие линии, рамки карточек (декор) */
+  --line-strong: #c5ccd6; /* разделители посильнее (декор) */
+  --field: #7f8898;       /* рамка поля: 3.57 surface, 3.36 sunk, 3.30 bg */
+  --ctrl: #7b8494;        /* кружок задачи, иконки: 3.77 surface, 3.48 bg, 3.55 sunk, 3.33 hover */
+  --text: #121722;        /* 17.93 surface, 16.56 bg, 15.82 hover, 15.66 на голубом и розовом тинте */
+  --text-2: #4d5666;      /* 7.40 surface, 6.83 bg, 6.53 hover, 6.46 голубой и розовый тинт, 5.76 mark */
+  --text-3: #5f6878;      /* 5.62 surface, 5.19 bg, 4.96 hover, 4.91 голубой тинт. На розовом тинте не ставить */
+
+  /* голубой: действовать и ориентироваться */
+  --blue: #1f5fd6;        /* заливка кнопки: белый на ней 5.73; сама к surface 5.73, к bg 5.29, к blue-tint 5.00 */
+  --blue-hover: #1a50b5;  /* белый на ней 7.35 */
+  --blue-ink: #1a4fb0;    /* голубой текст и ссылки: 7.53 surface, 6.95 bg, 6.65 hover, 6.58 blue-tint */
+  --blue-tint: #e9f0fd;   /* выбранный пункт, сегодняшний день, распознанный токен (фон) */
+  --on-blue: #ffffff;
+
+  /* розовый: важное и сделанное */
+  --pink: #d6306e;        /* заливка: галочка, полное кольцо, кольцо P1. Белый на ней 4.66; к surface 4.66, к bg 4.30 */
+  --pink-hover: #bb2660;  /* белый на ней 5.90 */
+  --pink-ink: #b0245b;    /* розовый текст: 6.46 surface, 5.97 bg, 5.70 hover, 5.64 pink-tint */
+  --pink-tint: #fdebf2;   /* фон: закрытый день, флажок P1 в карточке фокуса, выбранный чип */
+  --on-pink: #ffffff;
+
+  /* старые имена (на них написан style.css) */
+  --accent: var(--blue);
+  --accent-hover: var(--blue-hover);
+  --accent-ink: var(--blue-ink);
+  --on-accent: var(--on-blue);
+  --tint: var(--blue-tint);
+  --focus: var(--blue);   /* кольцо фокуса: 5.73 surface, 5.29 bg, 5.00 blue-tint */
+
+  /* смысловые */
+  --p1: var(--pink-ink);  /* приоритет 1 = розовый (красный рядом с розовым неотличим: 1.04) */
+  --p2: #a65a00;          /* янтарный: 5.14 surface, 4.75 bg, 4.54 hover */
+  --p3: var(--text-3);    /* низкий приоритет тихий, серый: не путается с голубым */
+  --danger: #b42f2a;      /* только удаление и ошибки: 6.21 surface, 5.74 bg */
+  --success-ink: #18744a; /* «сохранено», «импорт прошёл»: 5.78 surface, 5.33 bg */
+  --done: var(--pink);    /* заливка выполненного кружка, галочка на ней --on-pink */
+  --mark: #d6e4fb;        /* подсветка найденного: text 13.96, text-2 5.76 */
+
+  /* кольцо и графики дня/недели */
+  --ring-track: var(--line);   /* дорожка (декор); дуга к ней: голубая 4.57, розовая 3.72 */
+  --ring-fill: var(--blue);    /* дуга прогресса */
+  --ring-full: var(--pink);    /* кольцо, когда день закрыт */
+  --chart-1: var(--blue);      /* сделано / основной ряд: 5.73 surface */
+  --chart-2: var(--pink);      /* важное (P1) / акцентный ряд: 4.66 surface */
+  --chart-3: #8a93a2;          /* остальное / план: 3.10 surface */
+  --chart-grid: var(--line);   /* сетка (декор) */
+
+  /* всплывашка */
+  --toast-bg: #1b2130;
+  --toast-text: #f4f6f9;  /* 14.84 */
+  --toast-action: #9cbfff;/* 8.65 */
+  --scrim: rgb(18 23 34 / 0.36);
+
+  --shadow-raised: 0 1px 2px rgb(18 23 34 / 0.05), 0 4px 12px rgb(18 23 34 / 0.07);
+  --shadow-overlay: 0 2px 6px rgb(18 23 34 / 0.06), 0 16px 40px rgb(18 23 34 / 0.16);
+
+  /* форма, шрифты, движение: значения как были в v3 */
+  --r-xs: 6px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px; --s7: 48px; --s8: 64px;
+
+  --font-text: "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, system-ui, Roboto, "Noto Sans", "Helvetica Neue", Arial, sans-serif;
+  --font-display: "Segoe UI Variable Display", "Segoe UI", -apple-system, BlinkMacSystemFont, system-ui, Roboto, "Noto Sans", "Helvetica Neue", Arial, sans-serif;
+
+  --dur-1: 120ms;
+  --dur-2: 180ms;
+  --dur-3: 240ms;
+  --dur-4: 320ms;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-emph: cubic-bezier(0.2, 0, 0, 1);
+  --hit: 32px;
+}
+
+/* Тёмная: глубокий сине-чёрный, не инверсия. Голубой и розовый светлее и мягче, текст на заливках тёмный. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #0d1016;          /* боковая панель (утоплена) */
+  --surface: #151921;     /* основная колонка */
+  --raised: #1b2029;      /* карточки, меню: выше = светлее, без тяжёлых теней */
+  --sunk: #11151b;
+  --hover: #1f242e;
+  --line: #272d38;
+  --line-strong: #3a424f;
+  --field: #6c7585;       /* рамка поля: 3.79 surface, 3.94 sunk */
+  --ctrl: #7d8696;        /* 4.80 surface, 5.19 bg, 4.45 raised, 4.24 hover */
+  --text: #e7eaf0;        /* 14.61 surface, 15.80 bg, 13.56 raised, 12.67 blue-tint, 12.99 pink-tint */
+  --text-2: #a9b1be;      /* 8.15 surface, 7.56 raised, 7.20 hover, 7.07 blue-tint, 7.25 pink-tint, 4.77 mark */
+  --text-3: #9199a6;      /* 6.13 surface, 5.69 raised, 5.42 hover, 5.32 blue-tint */
+
+  --blue: #6fa1ff;        /* текст на заливке --on-blue 7.06; к surface 6.89, raised 6.39, blue-tint 5.98 */
+  --blue-hover: #8db5ff;  /* --on-blue на ней 8.75 */
+  --blue-ink: #9cbfff;    /* 9.48 surface, 8.38 hover, 8.22 blue-tint */
+  --blue-tint: #172540;
+  --on-blue: #08162e;
+
+  --pink: #ff7aa9;        /* --on-pink на ней 7.58; к surface 7.22, raised 6.70 */
+  --pink-hover: #ff97bc;  /* --on-pink 9.16 */
+  --pink-ink: #ffa3c3;    /* 9.46 surface, 8.35 hover, 8.41 pink-tint */
+  --pink-tint: #3a1828;
+  --on-pink: #2a0615;
+
+  --p2: #f2a54a;          /* 8.60 surface, 7.60 hover */
+  --danger: #ff8a80;      /* 7.71 surface */
+  --success-ink: #5fd39a; /* 9.45 surface */
+  --mark: #24406f;        /* text 8.55, text-2 4.77 */
+
+  --ring-track: #2a303b;  /* дуга к ней: голубая 5.19, розовая 5.43 */
+  --chart-3: #6c7585;     /* 3.79 surface, 3.52 raised */
+
+  --toast-bg: #e7eaf0;
+  --toast-text: #121722;  /* 14.88 */
+  --toast-action: #1a4fb0;/* 6.25 */
+  --scrim: rgb(0 0 0 / 0.55);
+
+  --shadow-raised: 0 0 0 1px var(--line);
+  --shadow-overlay: 0 0 0 1px #2f3644, 0 16px 40px rgb(0 0 0 / 0.55);
+}

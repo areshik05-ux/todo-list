@@ -1,11 +1,14 @@
-// Рисует PNG-иконки для установки на телефон (тот же знак, что favicon.svg).
+// Рисует PNG-иконки для установки на телефон (тот же знак, что favicon.svg):
+// голубая плитка, белый листок календаря с двумя кольцами и розовая галочка.
 // Без зависимостей: считаю покрытие пикселя сам и пакую PNG через zlib.
 // Запуск: node tools/make-icons.mjs
 import { deflateSync } from 'node:zlib';
 import { writeFileSync } from 'node:fs';
 
-const GREEN = [0x1f, 0x7a, 0x52];
+// те же цвета, что --blue и --pink светлой темы в css/theme.css
+const BLUE = [0x1f, 0x5f, 0xd6];
 const WHITE = [0xff, 0xff, 0xff];
+const PINK = [0xd6, 0x30, 0x6e];
 
 function crc32(buf) {
   let c = ~0;
@@ -51,33 +54,47 @@ function segDist(px, py, [ax, ay], [bx, by]) {
   return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
 }
 
-// Знак в координатах 32×32, как в favicon.svg. maskable: без скругления, знак меньше (безопасная зона 80%).
+// точка внутри прямоугольника [x, y, w, h] со скруглением r
+function inRect(px, py, [x, y, w, h], r) {
+  const qx = Math.max(x + r - px, 0, px - (x + w - r));
+  const qy = Math.max(y + r - py, 0, py - (y + h - r));
+  return px >= x && px <= x + w && py >= y && py <= y + h && Math.hypot(qx, qy) <= r;
+}
+
+// Знак в координатах 32×32, как в favicon.svg. maskable: плитка во весь квадрат, знак меньше (безопасная зона 80%).
+const PAGE = [5, 9, 22, 18];
+const RINGS = [[9.5, 5, 3, 6], [19.5, 5, 3, 6]];
+const TICK = [[10.5, 18.5], [14, 22], [21.5, 14.5]];
+
+function colorAt(px, py, maskable) {
+  const k = maskable ? 0.72 : 1;
+  if (!maskable && !inRect(px, py, [0, 0, 32, 32], 7)) return null;
+  // знак рисуется в своей системе координат, сжатой к центру
+  const x = 16 + (px - 16) / k;
+  const y = 16 + (py - 16) / k;
+  if (segDist(x, y, TICK[0], TICK[1]) <= 1.5 || segDist(x, y, TICK[1], TICK[2]) <= 1.5) {
+    if (inRect(x, y, PAGE, 3)) return PINK;
+  }
+  if (inRect(x, y, PAGE, 3) || RINGS.some((ring) => inRect(x, y, ring, 1.5))) return WHITE;
+  return BLUE;
+}
+
 function draw(size, { maskable = false } = {}) {
   const scale = size / 32;
-  const shrink = maskable ? 0.72 : 1;
-  const pts = [[9, 16.5], [13.5, 21], [23, 11.5]].map(([x, y]) => [16 + (x - 16) * shrink, 16 + (y - 16) * shrink]);
-  const half = 1.5 * shrink;
-  const radius = maskable ? 0 : 7;
   const SS = 4; // сглаживание: 4×4 подвыборки на пиксель
   return png(size, (x, y) => {
+    const sum = [0, 0, 0];
     let inside = 0;
-    let mark = 0;
     for (let i = 0; i < SS; i += 1) {
       for (let j = 0; j < SS; j += 1) {
-        const px = (x + (i + 0.5) / SS) / scale;
-        const py = (y + (j + 0.5) / SS) / scale;
-        const qx = Math.max(radius - px, 0, px - (32 - radius));
-        const qy = Math.max(radius - py, 0, py - (32 - radius));
-        if (Math.hypot(qx, qy) > radius) continue;
+        const c = colorAt((x + (i + 0.5) / SS) / scale, (y + (j + 0.5) / SS) / scale, maskable);
+        if (!c) continue;
         inside += 1;
-        if (segDist(px, py, pts[0], pts[1]) <= half || segDist(px, py, pts[1], pts[2]) <= half) mark += 1;
+        for (let n = 0; n < 3; n += 1) sum[n] += c[n];
       }
     }
-    const total = SS * SS;
     if (!inside) return [0, 0, 0, 0];
-    const k = mark / inside;
-    const rgb = GREEN.map((c, n) => Math.round(c * (1 - k) + WHITE[n] * k));
-    return [...rgb, Math.round((inside / total) * 255)];
+    return [...sum.map((v) => Math.round(v / inside)), Math.round((inside / (SS * SS)) * 255)];
   });
 }
 
