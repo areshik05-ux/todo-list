@@ -219,6 +219,10 @@ kbd {
   .brand-date .date-short { display: inline; }
 }
 
+@media (max-width: 359px) {
+  .brand-date { display: none; }
+}
+
 .brand-date {
   overflow: hidden;
   text-overflow: ellipsis;

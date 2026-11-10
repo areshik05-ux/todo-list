@@ -182,3 +182,14 @@ test('список без единой годной задачи тоже счи
   assert.equal(extra.length, 1, 'вторая порча в отдельной копии');
   assert.equal(loadTodosReport(memoryStorage({ [STORAGE_KEY]: '[]' })).corrupt, false, 'пустой список не порча');
 });
+
+test('после копии испорченной записи список начинается заново: перезагрузка не плодит копии', () => {
+  const storage = memoryStorage({ [STORAGE_KEY]: '{битое' });
+  assert.equal(loadTodosReport(storage).corrupt, true);
+  assert.deepEqual(loadTodosReport(storage), { todos: [], corrupt: false }, 'вторая загрузка уже чистая');
+  assert.equal([...storage.raw.keys()].filter((k) => k.startsWith(BACKUP_KEY)).length, 1);
+  const full = memoryStorage({ [STORAGE_KEY]: '{битое' });
+  full.setItem = () => { throw new Error('QuotaExceededError'); };
+  assert.equal(loadTodosReport(full).corrupt, true, 'места на копию нет: предупреждение всё равно');
+  assert.equal(full.raw.get(STORAGE_KEY), '{битое', 'и запись не тронута');
+});

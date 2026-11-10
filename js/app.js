@@ -135,14 +135,17 @@ function visibleGroups(today) {
     if (!overdue.length) return [{ items: ordered }];
     return [
       { title: t('group.overdue'), overdue: true, items: overdue },
-      { title: i18n.groupDate(today, today), items: ordered },
+      { title: t('date.today'), items: ordered },
     ].filter((g) => g.items.length);
   }
 
   return [{ items: sortTodos(shown, settings.sort) }];
 }
 
+let editingRow = null; // строка с открытым редактором на время перерисовки
+
 function render(focus = currentFocus()) {
+  editingRow = editingId ? listWrap.querySelector(`.todo.is-editing[data-id="${CSS.escape(editingId)}"]`) : null;
   const today = todayKey();
   renderedDay = today;
   const counts = countViews(todos, today);
@@ -251,6 +254,16 @@ function render(focus = currentFocus()) {
   sortSelect.disabled = !query && (view === 'upcoming' || view === 'done');
 
   restoreFocus(focus);
+
+  // строки сдвинулись (например, свернулся редактор): меню остаётся у своей кнопки
+  if (menu) {
+    const opener = menuOpener();
+    if (!opener) closeMenu(false);
+    else {
+      menu.opener = opener;
+      placeMenu();
+    }
+  }
 }
 
 // Слова поиска, которые подсвечиваются в названии (метки с # не подсвечиваем).
@@ -309,7 +322,7 @@ const rowCache = new Map(); // id → { key, li }
 function cachedItem(todo, today) {
   if (editingId === todo.id) {
     // открытый редактор не пересобираем: в нём то, что человек уже напечатал
-    const open = listWrap.querySelector(`.todo.is-editing[data-id="${CSS.escape(todo.id)}"]`);
+    const open = editingRow;
     if (!open) return renderItem(todo, today);
     open.classList.toggle('is-done', todo.done);
     $('.todo-check', open).checked = todo.done;
@@ -499,8 +512,15 @@ function renderDetails(todo) {
 
 // «По пятницам» для еженедельного повтора, иначе «Каждый день» и т. п.
 function repeatLabel(repeat, day, due) {
-  const weekday = Number.isInteger(day) ? day : due ? fromKey(due).getDay() : null;
-  return repeat === 'week' && weekday !== null ? t(`repeat.on${weekday}`) : t(`repeat.${repeat}`);
+  if (repeat === 'week') {
+    const weekday = Number.isInteger(day) ? day : due ? fromKey(due).getDay() : null;
+    if (weekday !== null) return t(`repeat.on${weekday}`);
+  }
+  if (repeat === 'month') {
+    const date = Number.isInteger(day) ? day : due ? fromKey(due).getDate() : null;
+    if (date !== null) return t('repeat.monthOn', { d: date });
+  }
+  return t(`repeat.${repeat}`);
 }
 
 function addStepsInline(field, text) {
@@ -515,16 +535,48 @@ function addStepsInline(field, text) {
   showToast(t('steps.limit', { n: MAX_STEPS, m: rest.length }));
 }
 
+// Значения полей редактора, как их показали человеку.
+function editorFields(todo) {
+  return {
+    title: todo.title,
+    due: todo.due ?? '',
+    priority: String(todo.priority),
+    tags: todo.tags.join(' '),
+    repeat: todo.repeat ?? '',
+    notes: todo.notes,
+  };
+}
+
+// Задача под открытым редактором изменилась не через него («Вернуть»):
+// поля, которые человек не трогал, показывают новое значение, его правки остаются.
+function syncEditor(todo) {
+  const editor = $('.editor', listWrap);
+  if (!editor || !todo) return;
+  const base = JSON.parse(editor.dataset.base);
+  const next = editorFields(todo);
+  for (const [name, value] of Object.entries(next)) {
+    const field = editor.elements[name];
+    if (field.value === base[name]) {
+      field.value = value;
+      base[name] = value;
+    }
+  }
+  editor.dataset.base = JSON.stringify(base);
+}
+
 function renderEditor(todo) {
   const editor = editorTemplate.content.firstElementChild.cloneNode(true);
   translate(editor);
+  editor.dataset.base = JSON.stringify(editorFields(todo));
   editor.elements.title.value = todo.title;
   editor.elements.due.value = todo.due ?? '';
   editor.elements.priority.value = String(todo.priority);
   editor.elements.tags.value = todo.tags.join(' ');
   editor.elements.repeat.value = todo.repeat ?? '';
   // у еженедельной задачи в списке виден её день: «По пятницам»
-  if (todo.repeat === 'week') $('option[value="week"]', editor).textContent = repeatLabel('week', todo.repeatDay, todo.due);
+  if (todo.repeat === 'week' || todo.repeat === 'month') {
+    $(`option[value="${todo.repeat}"]`, editor).textContent = repeatLabel(todo.repeat, todo.repeatDay, todo.due);
+  }
   editor.elements.notes.value = todo.notes;
   $('.step-list', editor).append(...todo.steps.map((step) => stepEditRow(step)));
   numberSteps(editor);
@@ -567,7 +619,7 @@ function addStepFromInput(field) {
   const editor = field.closest('.editor');
   if (!field.value.trim()) return false;
   if ($$('.step-edit', editor).length >= MAX_STEPS) {
-    showToast(t('steps.limit', { n: MAX_STEPS, m: 1 }));
+    showToast(t('steps.full', { n: MAX_STEPS }));
     return false;
   }
   const row = stepEditRow({ title: field.value, done: false });
@@ -882,7 +934,7 @@ rowMenu.addEventListener('click', (e) => {
     return;
   }
   if (item.dataset.action === 'pick') {
-    startEditing(li, 'input[name="due"]');
+    startEditing(li, 'input[name="due"]', { oneOff: true });
     try {
       $('.is-editing input[name="due"]', listWrap)?.showPicker();
     } catch {
@@ -960,9 +1012,12 @@ function remove(li) {
   showToast(t('toast.deleted', { title: todo.title }), { snapshot, focus: { id, selector: '.todo-check', index } });
 }
 
-function startEditing(li, selector = 'input[name="title"]') {
+let keepAnchor = false; // редактор открыт из «Выбрать дату…»: перенос одного раза
+
+function startEditing(li, selector = 'input[name="title"]', { oneOff = false } = {}) {
   if (editingId === li.dataset.id) return;
   editingId = li.dataset.id;
+  keepAnchor = oneOff;
   render({ id: editingId, selector });
   const field = $('.is-editing input[name="title"]', listWrap);
   if (document.activeElement === field) field.setSelectionRange(field.value.length, field.value.length);
@@ -985,8 +1040,11 @@ function editedTodos() {
     today: todayKey(),
   };
   // срок и повтор не трогали: день недели повтора остаётся прежним
-  // повтор не меняли: «по пятницам» остаётся по пятницам, даже если этот раз перенесли
-  if (changes.repeat === original.repeat) changes.repeatDay = original.repeatDay;
+  // Повтор и срок не меняли, или перенесли один раз через «Выбрать дату…»:
+  // «по пятницам» остаётся по пятницам. Новый срок в редакторе задаёт новый день повтора.
+  if (changes.repeat === original.repeat && (keepAnchor || changes.due === original.due)) {
+    changes.repeatDay = original.repeatDay;
+  }
   const next = updateTodo(todos, editingId, changes);
   // пометка примера не считается правкой: открыли и закрыли пример, он остался примером
   const before = JSON.stringify({ ...original, sample: undefined });
@@ -1133,7 +1191,7 @@ listWrap.addEventListener('keydown', (e) => {
 });
 
 // Клик или Tab мимо редактора сохраняет правку, как в v1 при потере фокуса.
-// Клик по «Вернуть» в сообщении сам закрывает редактор (см. applyUndo).
+// Клик по «Вернуть» в сообщении правку не сохраняет: редактор остаётся открытым (см. applyUndo).
 document.addEventListener('click', (e) => {
   if (editingId && !e.target.closest?.('.editor, .toast')) flushEditor();
 }, true);
@@ -1269,6 +1327,7 @@ function applyUndo() {
   for (const timer of lingering.values()) clearTimeout(timer);
   lingering.clear();
   commit(snapshot, { focus: focus ?? undefined });
+  if (editingId) syncEditor(todos.find((x) => x.id === editingId));
   announce(t('toast.restored'));
 }
 
@@ -1561,7 +1620,7 @@ window.addEventListener('storage', (e) => {
   if (e.key === STORAGE_KEY) {
     todos = loadTodos();
     if (editingId && !todos.some((todo) => todo.id === editingId)) editingId = null;
-    if (editingId) return;
+    // снимок для «Вернуть» сделан до чужой правки и стёр бы её
     dropUndo();
     render();
   } else if (e.key === SETTINGS_KEY) {
@@ -1586,6 +1645,9 @@ $('#storage-corrupt').hidden = !loaded.corrupt;
 applyTheme();
 applyLanguage();
 render();
+
+// На компьютере сразу можно печатать задачу; на телефоне клавиатуру сами не открываем.
+if (matchMedia('(hover: hover) and (pointer: fine)').matches && document.activeElement === document.body) input.focus();
 
 // Работа без интернета: страница и скрипты сохраняются после первого визита.
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {

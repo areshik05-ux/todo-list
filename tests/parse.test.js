@@ -154,3 +154,22 @@ test('«к 25.11» и «до 25 ноября»: предлог уходит вм
   assert.equal(p('Сдать до 25 ноября').title, 'Сдать');
   assert.equal(p('Сдать проект').title, 'Сдать проект');
 });
+
+test('«by 25.11» тоже срок', () => {
+  assert.deepEqual([p('Pay rent by 25.11').title, p('Pay rent by 25.11').due], ['Pay rent', '2026-11-25']);
+});
+
+test('«к пятнице», «до пятницы», «в пт», «до завтра», "next fri"', () => {
+  const cases = {
+    'Отчёт к пятнице': ['Отчёт', '2026-11-13'],
+    'Отчёт до пятницы': ['Отчёт', '2026-11-13'],
+    'Созвон в пт': ['Созвон', '2026-11-13'],
+    'Созвон во вт': ['Созвон', '2026-11-17'],
+    'Отчёт до завтра': ['Отчёт', '2026-11-11'],
+    'Report next fri': ['Report', '2026-11-13'],
+    'Report by tomorrow': ['Report', '2026-11-11'],
+  };
+  for (const [text, [title, due]] of Object.entries(cases)) assert.deepEqual([p(text).title, p(text).due], [title, due], text);
+  assert.equal(p('Mon cheri').due, null, 'сокращение без on/next не день');
+  assert.equal(p('Купить пт-шку').due, null);
+});

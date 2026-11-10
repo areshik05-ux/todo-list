@@ -118,9 +118,15 @@ export function loadTodosReport(storage) {
   try {
     const raw = local(storage).getItem(STORAGE_KEY);
     if (!isCorrupt(raw)) return { todos: loadTodos(storage), corrupt: false };
-    // каждая испорченная запись в свою копию: первую не затираем
+    // каждая испорченная запись в свою копию (первую не затираем), потом список с чистого листа,
+    // чтобы следующая загрузка не делала ещё одну копию того же самого
     const key = local(storage).getItem(BACKUP_KEY) === null ? BACKUP_KEY : `${BACKUP_KEY}:${Date.now()}`;
-    local(storage).setItem(key, raw);
+    try {
+      local(storage).setItem(key, raw);
+      local(storage).setItem(STORAGE_KEY, serialize([]));
+    } catch {
+      // места на копию нет: запись не трогаем, предупреждение всё равно покажем
+    }
     return { todos: [], corrupt: true };
   } catch {
     return { todos: [], corrupt: false };
