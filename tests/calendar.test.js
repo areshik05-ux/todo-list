@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { toICS, icsFileName, escapeText, foldLine, repeatRule } from '../js/calendar.js';
+import { toICS, icsFileName, escapeText, foldLine, repeatRule, eventUid } from '../js/calendar.js';
 
 const NOW = Date.UTC(2026, 10, 11, 4, 0, 0);
 const base = { id: 'a1', title: 'Позвонить в банк', due: '2026-11-12', priority: 0, tags: [], notes: '', steps: [], repeat: null, repeatDay: null };
@@ -37,7 +37,12 @@ test('повторы переводятся в RRULE', () => {
   assert.equal(repeatRule('weekday', null, '2026-11-12'), 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR');
   assert.equal(repeatRule('week', 5, '2026-11-12'), 'FREQ=WEEKLY;BYDAY=FR');
   assert.equal(repeatRule('week', null, '2026-11-12'), 'FREQ=WEEKLY;BYDAY=TH'); // 12.11.2026 четверг
-  assert.equal(repeatRule('month', 31, '2026-11-30'), 'FREQ=MONTHLY;BYMONTHDAY=31');
+  assert.equal(repeatRule('month', 31, '2026-11-30'), 'FREQ=MONTHLY;BYMONTHDAY=-1');
+  assert.equal(repeatRule('month', 30, '2026-11-30'), 'FREQ=MONTHLY;BYMONTHDAY=28,29,30;BYSETPOS=-1');
+  assert.equal(repeatRule('month', 29, '2026-11-29'), 'FREQ=MONTHLY;BYMONTHDAY=28,29;BYSETPOS=-1');
+  assert.equal(repeatRule('month', 28, '2026-11-28'), 'FREQ=MONTHLY;BYMONTHDAY=28');
+  assert.equal(repeatRule('month', null, '2026-11-05'), 'FREQ=MONTHLY;BYMONTHDAY=5');
+  assert.equal(repeatRule('year', null, '2028-02-29'), 'FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=28,29;BYSETPOS=-1');
   assert.equal(repeatRule('year', null, '2026-11-12'), 'FREQ=YEARLY');
   assert.equal(repeatRule(null, null, '2026-11-12'), null);
   assert.match(toICS({ ...base, repeat: 'week', repeatDay: 1 }, { now: NOW }), /\r\nRRULE:FREQ=WEEKLY;BYDAY=MO\r\n/);
@@ -74,4 +79,15 @@ test('имя файла из названия', () => {
   assert.equal(icsFileName({ title: '../../etc/passwd' }), 'etc-passwd.ics');
   assert.equal(icsFileName({ title: '!!!' }), 'task.ics');
   assert.ok(icsFileName({ title: 'а'.repeat(100) }).length <= 44);
+});
+
+test('UID серии не меняется от раза к разу, у обычной задачи это id', () => {
+  const first = { ...base, id: 'x1', repeat: 'month', repeatDay: 31, due: '2026-11-30' };
+  const next = { ...first, id: 'x2', due: '2026-12-31' };
+  assert.equal(eventUid(first), eventUid(next));
+  assert.match(eventUid(first), /^series-[0-9a-f]{8}$/);
+  assert.notEqual(eventUid(first), eventUid({ ...first, title: 'Другое' }));
+  assert.equal(eventUid(base), 'a1');
+  assert.match(toICS(next, { now: NOW }), new RegExp(`UID:${eventUid(first)}@arina-todo-list`));
+  assert.match(toICS(base, { now: NOW, lang: 'en' }), /PRODID:-\/\/arina-todo-list\/\/Tasks\/\/EN/);
 });

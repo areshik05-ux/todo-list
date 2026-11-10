@@ -52,9 +52,34 @@ export function repeatRule(repeat, repeatDay, due) {
     const day = Number.isInteger(repeatDay) ? repeatDay : new Date(`${due}T00:00:00Z`).getUTCDay();
     return `FREQ=WEEKLY;BYDAY=${BYDAY[day]}`;
   }
-  if (repeat === 'month') return `FREQ=MONTHLY;BYMONTHDAY=${Number.isInteger(repeatDay) ? repeatDay : Number(due.slice(8))}`;
-  if (repeat === 'year') return 'FREQ=YEARLY';
+  if (repeat === 'month') {
+    const day = Number.isInteger(repeatDay) ? repeatDay : Number(due.slice(8));
+    // В приложении «31-го» в коротком месяце значит последний день (28 февраля, 30 апреля).
+    // В календаре несуществующая дата просто пропускается, поэтому для 29–31 правило
+    // «последний из подходящих дней месяца», а 31 и есть «последний день».
+    if (day === 31) return 'FREQ=MONTHLY;BYMONTHDAY=-1';
+    if (day >= 29) return `FREQ=MONTHLY;BYMONTHDAY=${Array.from({ length: day - 27 }, (_, i) => 28 + i).join(',')};BYSETPOS=-1`;
+    return `FREQ=MONTHLY;BYMONTHDAY=${day}`;
+  }
+  if (repeat === 'year') {
+    // 29 февраля в невисокосный год: 28-е, как в приложении
+    if (due.slice(5) === '02-29') return 'FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=28,29;BYSETPOS=-1';
+    return 'FREQ=YEARLY';
+  }
   return null;
+}
+
+// UID должен быть одним и тем же для всей серии: у повторяющейся задачи каждый
+// следующий раз получает новый id, и календарь завёл бы вторую серию.
+// Для повтора берём отпечаток названия и правила (FNV-1a), для обычной задачи её id.
+export function eventUid(todo) {
+  if (!todo.repeat) return String(todo.id ?? '');
+  let hash = 0x811c9dc5;
+  for (const ch of `${todo.title}|${todo.repeat}|${todo.repeatDay ?? ''}`) {
+    hash ^= ch.codePointAt(0);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return `series-${hash.toString(16).padStart(8, '0')}`;
 }
 
 function stamp(now) {
@@ -81,11 +106,11 @@ export function toICS(todo, { now = Date.now(), lang = 'ru', alarm = true } = {}
   const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//arina-todo-list//Tasks//RU',
+    `PRODID:-//arina-todo-list//Tasks//${lang === 'en' ? 'EN' : 'RU'}`,
     'CALSCALE:GREGORIAN',
     'METHOD:PUBLISH',
     'BEGIN:VEVENT',
-    `UID:${escapeText(todo.id ?? stamp(now))}@arina-todo-list`,
+    `UID:${escapeText(eventUid(todo) || stamp(now))}@arina-todo-list`,
     `DTSTAMP:${stamp(now)}`,
     `DTSTART;VALUE=DATE:${compact(todo.due)}`,
     `DTEND;VALUE=DATE:${compact(nextDay(todo.due))}`,
