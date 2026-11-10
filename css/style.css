@@ -1086,15 +1086,17 @@ h1 {
 
 button.meta-due {
   min-height: 24px;
-  margin: -3px -6px;
+  margin: -3px 0;
   padding: 0 6px;
   border-radius: var(--r-sm);
   font-size: 13px;
+  /* лёгкая подложка: видно, что срок нажимается */
+  background: color-mix(in srgb, var(--text) 5%, transparent);
 }
 
 button.meta-due:hover,
 button.meta-due[aria-expanded="true"] {
-  background: color-mix(in srgb, var(--text) 6%, transparent);
+  background: color-mix(in srgb, var(--text) 10%, transparent);
 }
 
 .meta-due.is-today {
@@ -1275,11 +1277,12 @@ button.meta-due[aria-expanded="true"] {
 
 .meta-details {
   min-height: 24px;
-  margin: -3px -6px;
+  margin: -3px 0;
   padding: 0 6px;
   border-radius: var(--r-sm);
   color: var(--text-2);
   font-size: 13px;
+  background: color-mix(in srgb, var(--text) 5%, transparent);
 }
 
 @media (pointer: coarse) {
@@ -1297,7 +1300,7 @@ button.meta-due[aria-expanded="true"] {
 }
 
 .meta-details:hover {
-  background: color-mix(in srgb, var(--text) 6%, transparent);
+  background: color-mix(in srgb, var(--text) 10%, transparent);
   color: var(--text);
 }
 
