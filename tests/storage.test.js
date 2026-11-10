@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   loadTodos, saveTodos, parseTodos, loadSettings, saveSettings, parseSettings,
-  exportJSON, importJSON, storageAvailable, isFirstVisit, STORAGE_KEY, LEGACY_KEY,
+  exportJSON, importJSON, storageAvailable, isFirstVisit, loadTodosReport, STORAGE_KEY, LEGACY_KEY, BACKUP_KEY,
 } from '../js/storage.js';
 
 function memoryStorage(initial = {}) {
@@ -21,7 +21,7 @@ const brokenStorage = {
 };
 
 const full = (id, extra = {}) => ({
-  id, title: id, done: false, createdAt: 1, completedAt: null, due: null, priority: 0, tags: [], notes: '', steps: [], repeat: null, ...extra,
+  id, title: id, done: false, createdAt: 1, completedAt: null, due: null, priority: 0, tags: [], notes: '', steps: [], repeat: null, repeatDay: null, ...extra,
 });
 
 test('сохранённый список читается обратно без изменений', () => {
@@ -130,12 +130,12 @@ test('импорт чужого или пустого файла ничего н
 test('v3: шаги, заметка, повтор и пометка примера переживают сохранение, мусор в них чистится', () => {
   const storage = memoryStorage();
   const todo = full('a', {
-    due: '2026-11-10', repeat: 'week', notes: 'строка\nвторая', sample: true,
+    due: '2026-11-10', repeat: 'week', repeatDay: 5, notes: 'строка\nвторая', sample: 'trip',
     steps: [{ id: 's1', title: 'шаг', done: true }],
   });
   saveTodos([todo], storage);
   assert.deepEqual(loadTodos(storage), [todo]);
-  const dirty = parseTodos(JSON.stringify([{ id: 'b', title: 'x', repeat: 'hourly', steps: 'nope', notes: 5, sample: 'yes' }]));
+  const dirty = parseTodos(JSON.stringify([{ id: 'b', title: 'x', repeat: 'hourly', steps: 'nope', notes: 5, sample: 'Not Valid!' }]));
   assert.deepEqual(dirty, [full('b', { title: 'x', createdAt: 0 })]);
   const noDue = parseTodos(JSON.stringify([{ id: 'c', title: 'x', repeat: 'day' }]));
   assert.equal(noDue[0].repeat, null, 'повтор без срока не берём');
@@ -146,4 +146,28 @@ test('первый визит: только если нет ни v2, ни v1', (
   assert.equal(isFirstVisit(memoryStorage({ [STORAGE_KEY]: '[]' })), false);
   assert.equal(isFirstVisit(memoryStorage({ [LEGACY_KEY]: '[]' })), false);
   assert.equal(isFirstVisit(brokenStorage), false);
+});
+
+test('сделанный раз повторяющейся задачи хранит связь со следующим, мусор в ней отбрасывается', () => {
+  const done = full('d', { done: true, completedAt: 5, series: { repeat: 'week', repeatDay: 1, next: 'n' } });
+  assert.deepEqual(parseTodos(JSON.stringify([done])), [done]);
+  const bad = parseTodos(JSON.stringify([{ ...done, series: { repeat: 'x', next: 'n' } }]));
+  assert.equal('series' in bad[0], false);
+  const open = parseTodos(JSON.stringify([{ ...done, done: false }]));
+  assert.equal('series' in open[0], false, 'у открытой задачи связи нет');
+  const week = parseTodos(JSON.stringify([full('w', { due: '2026-11-13', repeat: 'week' })]));
+  assert.equal(week[0].repeatDay, 5, 'день недели берётся из срока, если его не было');
+});
+
+test('испорченная запись: копия в запасной ключ, сигнал для предупреждения', () => {
+  const storage = memoryStorage({ [STORAGE_KEY]: '{"todos": [obrezano' });
+  assert.deepEqual(loadTodosReport(storage), { todos: [], corrupt: true });
+  assert.equal(storage.raw.get(BACKUP_KEY), '{"todos": [obrezano');
+  storage.setItem(STORAGE_KEY, '{"oops": 1}');
+  loadTodosReport(storage);
+  assert.equal(storage.raw.get(BACKUP_KEY), '{"todos": [obrezano', 'первую копию не затираем');
+  const ok = memoryStorage({ [STORAGE_KEY]: JSON.stringify({ version: 3, todos: [full('a')] }) });
+  assert.deepEqual(loadTodosReport(ok), { todos: [full('a')], corrupt: false });
+  assert.deepEqual(loadTodosReport(memoryStorage()), { todos: [], corrupt: false });
+  assert.deepEqual(loadTodosReport(brokenStorage), { todos: [], corrupt: false });
 });

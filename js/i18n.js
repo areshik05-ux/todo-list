@@ -7,7 +7,7 @@ export const LANGS = ['ru', 'en'];
 
 const ru = {
   'meta.title': 'Задачи',
-  'meta.description': 'Список задач со сроками, приоритетами и метками. Всё хранится в браузере.',
+  'meta.description': 'Список задач: быстрый ввод словами, повторы, шаги, перенос срока в два нажатия. Работает без интернета, всё хранится в браузере.',
   'app.name': 'Задачи',
   'nav.label': 'Разделы',
   'view.all': 'Все',
@@ -23,7 +23,7 @@ const ru = {
   'add.hintUpcoming': 'Задача без срока получит завтрашнюю дату',
   'chip.ignore': 'Не распознавать «{text}»',
   'search.label': 'Поиск по задачам',
-  'search.placeholder': 'Найти задачу',
+  'search.placeholder': 'Поиск',
   'search.clear': 'Очистить поиск',
   'sort.label': 'Порядок',
   'sort.manual': 'Свой порядок',
@@ -145,7 +145,6 @@ const ru = {
   'steps.addLabel': 'Новый шаг для «{title}»',
   'editor.stepsHint': 'можно вставить список, каждая строка станет шагом',
   'editor.notesHint': 'ссылки, адреса, подробности',
-  'chip.repeat': 'Повтор: {label}',
   'menu.pick': 'Выбрать дату…',
   'menu.label': 'Перенести или удалить: {title}',
   'overdue.moveAll': 'Перенести всё на сегодня',
@@ -165,11 +164,20 @@ const ru = {
   'sample.bankTag': 'дела',
   'sample.bankNote': 'Эту задачу можно написать одной строкой: «Позвонить в банк завтра !1 #дела». Срок, приоритет и метка встанут сами.',
   'footer.offline': 'Работает и без интернета.',
+  'footer.author': 'Сделала Арина Иващенко,',
+  'footer.code': 'код на GitHub',
+  'skip': 'К новой задаче',
+  'add.empty': 'Сначала напишите задачу',
+  'steps.limit': 'В задаче может быть до {n} шагов. Остальное осталось в поле.',
+  'steps.added': 'Шаг добавлен: «{step}»',
+  'toast.restored': 'Возвращено',
+  'storage.corrupt': 'Сохранённые задачи не прочитались. Копия данных сохранена в браузере, список начат заново.',
+  'dayDone': 'На сегодня всё. Отдыхайте',
 };
 
 const en = {
   'meta.title': 'Tasks',
-  'meta.description': 'A to-do list with due dates, priorities and tags. Everything stays in your browser.',
+  'meta.description': 'A to-do list: natural-language quick add, repeats, steps, two-click rescheduling. Works offline, everything stays in your browser.',
   'app.name': 'Tasks',
   'nav.label': 'Views',
   'view.all': 'All',
@@ -307,7 +315,6 @@ const en = {
   'steps.addLabel': 'New step for “{title}”',
   'editor.stepsHint': 'paste a list, each line becomes a step',
   'editor.notesHint': 'links, addresses, details',
-  'chip.repeat': 'Repeats: {label}',
   'menu.pick': 'Pick a date…',
   'menu.label': 'Reschedule or delete: {title}',
   'overdue.moveAll': 'Move all to today',
@@ -327,6 +334,15 @@ const en = {
   'sample.bankTag': 'errands',
   'sample.bankNote': 'You can type this in one line: “Call the bank tomorrow !1 #errands”. The date, priority and tag fill in by themselves.',
   'footer.offline': 'Works offline too.',
+  'footer.author': 'Made by Arina Ivashchenko,',
+  'footer.code': 'code on GitHub',
+  'skip': 'Skip to new task',
+  'add.empty': 'Type a task first',
+  'steps.limit': 'A task can have up to {n} steps. The rest stayed in the field.',
+  'steps.added': 'Step added: “{step}”',
+  'toast.restored': 'Restored',
+  'storage.corrupt': 'Saved tasks could not be read. A copy of the data is kept in the browser and the list starts fresh.',
+  'dayDone': 'That’s all for today. Time to rest',
 };
 
 export const DICTS = { ru, en };

@@ -4,7 +4,7 @@
 
 import { isDateKey } from './dates.js';
 import { normalizeTags } from './parse.js';
-import { isRepeat, firstDue, nextDue } from './repeat.js';
+import { isRepeat, firstDue, nextDue, repeatDayFor } from './repeat.js';
 
 export const MAX_TITLE_LENGTH = 200;
 export const MAX_NOTES_LENGTH = 2000;
@@ -47,34 +47,59 @@ export function normalizeSteps(list) {
   return out;
 }
 
+
+// Любое действие человека с примером делает его своей задачей:
+// «Убрать примеры» её уже не тронет.
+// Всегда новая копия: исходный объект не меняется.
+function own(todo) {
+  const { sample, ...rest } = todo;
+  return rest;
+}
+
 export function addTodo(todos, fields, now = Date.now()) {
   const {
-    title: rawTitle, due = null, priority = 0, tags = [], notes = '', steps = [], repeat = null, today = null, sample = false,
+    title: rawTitle, due = null, priority = 0, tags = [], notes = '', steps = [],
+    repeat = null, repeatDay = null, today = null, sample = null,
   } = typeof fields === 'string' ? { title: fields } : fields;
   const title = normalizeTitle(rawTitle);
   if (!title) return todos;
   const rep = cleanRepeat(repeat);
+  const start = cleanDue(due) ?? (rep && today ? firstDue(rep, today) : null);
   const todo = {
     id: makeId(),
     title,
     done: false,
     createdAt: now,
     completedAt: null,
-    due: cleanDue(due) ?? (rep && today ? firstDue(rep, today) : null),
+    due: start,
     priority: cleanPriority(priority),
     tags: normalizeTags(tags),
     notes: normalizeNotes(notes),
     steps: normalizeSteps(steps),
     repeat: rep,
+    repeatDay: repeatDayFor(rep, repeatDay, start),
   };
-  if (sample) todo.sample = true; // пример с первого визита, см. samples.js
+  if (sample) todo.sample = sample; // пример с первого визита, см. samples.js
   return [todo, ...todos];
 }
 
+// Снять или поставить отметку. Сняли отметку со сделанного раза повторяющейся
+// задачи: следующий раз, если его ещё не трогали, убираем, а повтор возвращаем,
+// чтобы не осталось двух открытых копий.
 export function toggleTodo(todos, id, now = Date.now()) {
-  return todos.map((t) => (t.id === id
-    ? { ...t, done: !t.done, completedAt: t.done ? null : now }
-    : t));
+  const todo = todos.find((t) => t.id === id);
+  if (!todo) return todos;
+  if (!todo.done) return todos.map((t) => (t.id === id ? { ...own(t), done: true, completedAt: now } : t));
+  const { series, ...rest } = own(todo);
+  const reopened = { ...rest, done: false, completedAt: null };
+  const next = series && todos.find((t) => t.id === series.next && !t.done);
+  if (series && next) {
+    reopened.repeat = series.repeat;
+    reopened.repeatDay = series.repeatDay;
+  }
+  return todos
+    .filter((t) => !next || t.id !== next.id)
+    .map((t) => (t.id === id ? reopened : t));
 }
 
 // Отметить выполненной. У повторяющейся задачи сделанная копия уходит в «Готово»
@@ -84,31 +109,39 @@ export function completeTodo(todos, id, today, now = Date.now()) {
   const index = todos.findIndex((t) => t.id === id);
   const todo = todos[index];
   if (!todo || todo.done) return { todos, next: null };
-  const done = { ...todo, done: true, completedAt: now, repeat: null };
+  const mine = own(todo);
+  const done = { ...mine, done: true, completedAt: now, repeat: null, repeatDay: null };
   if (!todo.repeat) return { todos: [...todos.slice(0, index), done, ...todos.slice(index + 1)], next: null };
   const next = {
-    ...todo,
+    ...mine,
     id: makeId(),
     createdAt: now,
-    due: nextDue(todo.repeat, todo.due, today),
+    due: nextDue(todo.repeat, todo.due, today, todo.repeatDay),
     steps: todo.steps.map((s) => ({ ...s, done: false })),
   };
+  done.series = { repeat: todo.repeat, repeatDay: todo.repeatDay, next: next.id };
   return { todos: [...todos.slice(0, index), next, done, ...todos.slice(index + 1)], next };
 }
 
 export function toggleStep(todos, id, stepId) {
   return todos.map((t) => (t.id === id
-    ? { ...t, steps: t.steps.map((s) => (s.id === stepId ? { ...s, done: !s.done } : s)) }
+    ? { ...own(t), steps: t.steps.map((s) => (s.id === stepId ? { ...s, done: !s.done } : s)) }
     : t));
 }
 
 // Шаги из вставленного текста: каждая непустая строка становится шагом.
+// Возвращает список и строки, которые не влезли в лимит.
 export function addSteps(todos, id, text) {
   const titles = String(text ?? '').split(/\r?\n/).map(normalizeTitle).filter(Boolean);
-  if (!titles.length) return todos;
-  return todos.map((t) => (t.id === id
-    ? { ...t, steps: normalizeSteps([...t.steps, ...titles.map((title) => ({ title, done: false }))]) }
-    : t));
+  const todo = todos.find((t) => t.id === id);
+  if (!titles.length || !todo) return { todos, rest: [] };
+  const room = Math.max(0, MAX_STEPS - todo.steps.length);
+  if (!room) return { todos, rest: titles };
+  const added = titles.slice(0, room).map((title) => ({ title, done: false }));
+  return {
+    todos: todos.map((t) => (t.id === id ? { ...own(t), steps: normalizeSteps([...t.steps, ...added]) } : t)),
+    rest: titles.slice(room),
+  };
 }
 
 export function stepProgress(todo) {
@@ -117,14 +150,14 @@ export function stepProgress(todo) {
 
 // Просроченное одним нажатием на сегодня: без чувства вины за кучу красного.
 export function rescheduleOverdue(todos, today) {
-  return todos.map((t) => (!t.done && t.due !== null && t.due < today ? { ...t, due: today } : t));
+  return todos.map((t) => (!t.done && t.due !== null && t.due < today ? { ...own(t), due: today } : t));
 }
 
 // Правка любых полей. Пустое название не сохраняем: задача без названия бессмысленна.
 export function updateTodo(todos, id, changes) {
   return todos.map((t) => {
     if (t.id !== id) return t;
-    const next = { ...t };
+    const next = own(t);
     if ('title' in changes) {
       const title = normalizeTitle(changes.title);
       if (title) next.title = title;
@@ -137,8 +170,8 @@ export function updateTodo(todos, id, changes) {
     if ('repeat' in changes) next.repeat = cleanRepeat(changes.repeat);
     // повтор без срока не имеет смысла: начинаем с сегодня
     if (next.repeat && !next.due && changes.today) next.due = firstDue(next.repeat, changes.today);
-    // пример, который человек поправил под себя, больше не пример
-    if ('sample' in changes && !changes.sample) delete next.sample;
+    // в редакторе день недели повтора следует за сроком, при быстром переносе (только due) остаётся
+    if ('repeat' in changes || 'repeatDay' in changes) next.repeatDay = repeatDayFor(next.repeat, changes.repeatDay, next.due);
     return next;
   });
 }

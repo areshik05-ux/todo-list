@@ -132,3 +132,19 @@ test('«каждый день рождения» и «every weekday» не пу�
   assert.equal(p('Report every weekday').repeat, 'weekday');
   assert.equal(p('Every day of the week').repeat, null);
 });
+
+test('«по понедельникам», «on mondays» и день недели повтора', () => {
+  const a = p('Йога по понедельникам');
+  assert.deepEqual([a.title, a.repeat, a.repeatDay, a.due], ['Йога', 'week', 1, '2026-11-16']);
+  const b = p('Gym on fridays');
+  assert.deepEqual([b.title, b.repeat, b.repeatDay], ['Gym', 'week', 5]);
+  const c = p('Standup every monday tomorrow');
+  assert.deepEqual([c.repeatDay, c.due], [1, '2026-11-11'], 'первый раз завтра, дальше по понедельникам');
+  assert.equal(p('Отчёт каждую неделю').repeatDay, null, 'без дня: день возьмётся из срока');
+});
+
+test('«on» перед датой не остаётся в названии', () => {
+  assert.deepEqual([p('Pay rent every month on 25.11').title, p('Pay rent every month on 25.11').due], ['Pay rent', '2026-11-25']);
+  assert.equal(p('Party on nov 25').title, 'Party');
+  assert.equal(p('Turn on 5 lamps').title, 'Turn on 5 lamps');
+});

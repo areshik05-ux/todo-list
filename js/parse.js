@@ -62,36 +62,40 @@ const DATE_RULES = [
     (_, t) => nextWeekday(t, day),
   ]),
   // 25.11, 25.11.2026, 25/11. Месяц строго двумя цифрами, чтобы «1.5 литра» не стало 1 мая.
-  [re('(\\d{1,2})[./](\\d{2})(?:[./](\\d{4}))?'),
+  // «on» перед датой тоже срезаем: «pay rent on 25.11» → «pay rent».
+  [re('(?:on )?(\\d{1,2})[./](\\d{2})(?:[./](\\d{4}))?'),
     (m, t) => dayMonthKey(t, Number(m[1]), Number(m[2]), m[3] ? Number(m[3]) : undefined)],
   // 25 ноября, 25 nov, 25 november 2026
-  [re(`(\\d{1,2}) (${MONTH_RU}|${MONTH_EN})(?: (\\d{4}))?`),
+  [re(`(?:on )?(\\d{1,2}) (${MONTH_RU}|${MONTH_EN})(?: (\\d{4}))?`),
     (m, t) => dayMonthKey(t, Number(m[1]), monthIndex(m[2]), m[3] ? Number(m[3]) : undefined)],
   // nov 25, november 25
-  [re(`(${MONTH_EN_LEAD}) (\\d{1,2})(?: (\\d{4}))?`),
+  [re(`(?:on )?(${MONTH_EN_LEAD}) (\\d{1,2})(?: (\\d{4}))?`),
     (m, t) => dayMonthKey(t, Number(m[2]), monthIndex(m[1]), m[3] ? Number(m[3]) : undefined)],
 ];
 
 // Повтор: «каждый день», «по будням», «каждую пятницу», «every monday».
 // Одиночные daily/weekly не берём: «Daily Mail» не повтор.
 const REPEAT_WEEKDAYS = [
-  [1, 'каждый понедельник', 'monday'],
-  [2, 'каждый вторник', 'tuesday'],
-  [3, 'каждую среду', 'wednesday'],
-  [4, 'каждый четверг', 'thursday'],
-  [5, 'каждую пятницу', 'friday'],
-  [6, 'каждую субботу', 'saturday'],
-  [0, 'каждое воскресенье', 'sunday'],
+  [1, 'каждый понедельник|по понедельникам', 'monday'],
+  [2, 'каждый вторник|по вторникам', 'tuesday'],
+  [3, 'каждую среду|по средам', 'wednesday'],
+  [4, 'каждый четверг|по четвергам', 'thursday'],
+  [5, 'каждую пятницу|по пятницам', 'friday'],
+  [6, 'каждую субботу|по субботам', 'saturday'],
+  [0, 'каждое воскресенье|по воскресеньям', 'sunday'],
 ];
 const sameOrNextWeekday = (today, day) => (weekdayOf(today) === day ? today : nextWeekday(today, day));
+// [регулярка, шаг повтора, первый срок, день недели]
 const REPEAT_RULES = [
   // «каждый день рождения» не повтор
-  [re('каждый день(?! рождения)|ежедневно|every day(?! of)|everyday'), 'day', (t) => firstDue('day', t)],
-  [re('по будням|каждый будний день|every weekday|on weekdays'), 'weekday', (t) => firstDue('weekday', t)],
-  [re('каждую неделю|еженедельно|every week'), 'week', (t) => t],
-  [re('каждый месяц|ежемесячно|every month'), 'month', (t) => t],
-  [re('каждый год|ежегодно|every year'), 'year', (t) => t],
-  ...REPEAT_WEEKDAYS.map(([day, ru, en]) => [re(`${ru}|every ${en}`), 'week', (t) => sameOrNextWeekday(t, day)]),
+  [re('каждый день(?! рождения)|ежедневно|every day(?! of)|everyday'), 'day', (t) => firstDue('day', t), null],
+  [re('по будням|каждый будний день|every weekday|on weekdays'), 'weekday', (t) => firstDue('weekday', t), null],
+  [re('каждую неделю|еженедельно|every week'), 'week', (t) => t, null],
+  [re('каждый месяц|ежемесячно|every month'), 'month', (t) => t, null],
+  [re('каждый год|ежегодно|every year'), 'year', (t) => t, null],
+  ...REPEAT_WEEKDAYS.map(([day, ru, en]) => [
+    re(`${ru}|every ${en}|on ${en}s`), 'week', (t) => sameOrNextWeekday(t, day), day,
+  ]),
 ];
 
 const PRIORITY_RE = re('!([1-3])|p([1-3])');
@@ -112,7 +116,7 @@ const overlaps = (a, b) => a.start < b.end && b.start < a.end;
 
 /**
  * @returns {{ title: string, due: string|null, priority: 0|1|2|3, tags: string[],
- *   repeat: string|null, tokens: Array<{ type: 'date'|'priority'|'tag'|'repeat', text: string, value: any }> }}
+ *   repeat: string|null, repeatDay: number|null, tokens: Array<{ type: 'date'|'priority'|'tag'|'repeat', text: string, value: any }> }}
  */
 // ignore: слова, которые пользователь попросил не распознавать (крестик на чипе).
 export function parseQuickAdd(input, today, { ignore = [] } = {}) {
@@ -131,13 +135,13 @@ export function parseQuickAdd(input, today, { ignore = [] } = {}) {
   // Повтор разбираем раньше срока: в «каждый понедельник» слово «понедельник» не отдельный срок.
   let repeat = null;
   let repeatStart = null;
+  let repeatDay = null;
   const repeats = REPEAT_RULES
-    .flatMap(([regex, kind, start]) => collect(regex, text, () => ({ kind, start: start(today) })))
+    .flatMap(([regex, kind, start, day]) => collect(regex, text, () => ({ kind, start: start(today), day })))
     .sort((a, b) => a.start - b.start);
   for (const r of repeats) {
     if (accept('repeat', { ...r, value: r.value.kind })) {
-      repeat = r.value.kind;
-      repeatStart = r.value.start;
+      ({ kind: repeat, start: repeatStart, day: repeatDay } = r.value);
       break;
     }
   }
@@ -175,12 +179,12 @@ export function parseQuickAdd(input, today, { ignore = [] } = {}) {
   // Если вся строка состояла из служебных слов («завтра»), не теряем её:
   // считаем это названием, а не сроком.
   if (!title) {
-    return { title: text.replace(/\s+/g, ' ').trim(), due: null, priority: 0, tags: [], repeat: null, tokens: [] };
+    return { title: text.replace(/\s+/g, ' ').trim(), due: null, priority: 0, tags: [], repeat: null, repeatDay: null, tokens: [] };
   }
   if (repeat && !due) due = repeatStart;
 
   tokens.sort((a, b) => a.start - b.start);
-  return { title, due, priority, tags, repeat, tokens: tokens.map(({ start, ...rest }) => rest) };
+  return { title, due, priority, tags, repeat, repeatDay, tokens: tokens.map(({ start, ...rest }) => rest) };
 }
 
 export function normalizeTags(list) {

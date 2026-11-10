@@ -499,11 +499,16 @@ progress::-moz-progress-bar {
 }
 
 @media (min-width: 960px) {
+  /* меню открывается над рядом кнопок и не шире боковой панели, иначе панель его обрезает */
+  .side-tools { position: relative; }
+  .data { position: static; }
+
   .data-panel {
     top: auto;
-    right: auto;
+    right: 0;
     bottom: calc(100% + 6px);
     left: 0;
+    width: auto;
   }
 }
 
@@ -909,6 +914,9 @@ h1 {
   border-radius: var(--r-md);
   background: var(--surface);
   transition: background-color var(--dur-1) var(--ease-out);
+  /* строки за пределами экрана не раскладываются и не рисуются: длинный список не тормозит */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 52px;
 }
 
 .todo + .todo::before {
@@ -1036,7 +1044,6 @@ h1 {
 
 .todo-title {
   overflow-wrap: anywhere;
-  text-wrap: pretty;
   transition: color var(--dur-2) var(--ease-out);
 }
 
@@ -1247,6 +1254,15 @@ button.meta-due[aria-expanded="true"] {
   gap: 8px;
 }
 
+@media (max-width: 479px) {
+  /* на телефоне поля редактора в столбик: системное поле даты шире половины экрана */
+  .editor-row { grid-template-columns: minmax(0, 1fr); }
+}
+
+.field input[type="date"] {
+  min-width: 0;
+}
+
 @media (min-width: 640px) {
   .editor-row { grid-template-columns: 160px minmax(140px, 1fr) 110px; }
 }
@@ -1264,6 +1280,20 @@ button.meta-due[aria-expanded="true"] {
   border-radius: var(--r-sm);
   color: var(--text-2);
   font-size: 13px;
+}
+
+@media (pointer: coarse) {
+  /* на телефоне кнопки в строке задачи не меньше 32 px и не вплотную */
+  .todo-meta { row-gap: 14px; }
+
+  button.meta-due,
+  .meta-details,
+  .meta-tag {
+    min-height: 32px;
+    margin-block: -7px;
+  }
+
+  .lang button { height: 32px; }
 }
 
 .meta-details:hover {
@@ -1847,9 +1877,103 @@ button.meta-due[aria-expanded="true"] {
   }
 }
 
+@media (max-width: 359px) {
+  .view { font-size: 13px; padding: 0 2px; }
+}
+
+@media (max-width: 639px) {
+  /* подсказки клавиш нет, место справа в поле не нужно */
+  .composer input { padding-right: 12px; }
+}
+
+@media (max-width: 399px) {
+  .composer .btn-primary { min-width: 0; padding: 0 14px; }
+}
+
+/* Строка «Всё на сегодня сделано» */
+
+.day-done {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  color: var(--accent-ink);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.day-done .icon {
+  width: 18px;
+  height: 18px;
+}
+
+/* Пустая задача: подсказка становится сообщением */
+
+.hint.is-error {
+  color: var(--danger);
+}
+
+/* Ссылка «к списку» для клавиатуры: видна только в фокусе */
+
+.skip-link {
+  position: absolute;
+  z-index: 40;
+  top: 8px;
+  left: 8px;
+  padding: 8px 12px;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-overlay);
+  transform: translateY(-200%);
+}
+
+.skip-link:focus {
+  transform: none;
+}
+
+.local-note a {
+  color: inherit;
+  text-underline-offset: 3px;
+}
+
+/* Пока скрипт не перевёл интерфейс на английский, русский текст не мелькает.
+   Если скрипт не загрузится, через секунду страница всё равно появится. */
+.i18n-pending .app {
+  visibility: hidden;
+  animation: reveal 0s linear 1s forwards;
+}
+
+@keyframes reveal {
+  to { visibility: visible; }
+}
+
 /* На узком экране подсказки клавиш только отнимают место у поля */
 @media (max-width: 639px) {
   .key-hint {
     display: none;
   }
+}
+
+/* Страница 404 */
+
+.not-found {
+  display: grid;
+  gap: 16px;
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 96px 24px;
+}
+
+.not-found h1 {
+  font: 650 28px/36px var(--font-display);
+}
+
+.not-found p {
+  color: var(--text-2);
+}
+
+.not-found .btn-primary {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
 }

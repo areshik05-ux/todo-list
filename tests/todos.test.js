@@ -14,7 +14,7 @@ const dayKeyOf = (ms) => toKey(new Date(ms));
 const NOON = new Date(2026, 10, 10, 12).getTime();
 
 const make = (id, extra = {}) => ({
-  id, title: id, done: false, createdAt: 0, completedAt: null, due: null, priority: 0, tags: [], notes: '', steps: [], repeat: null, ...extra,
+  id, title: id, done: false, createdAt: 0, completedAt: null, due: null, priority: 0, tags: [], notes: '', steps: [], repeat: null, repeatDay: null, ...extra,
 });
 
 test('новая задача встаёт в начало списка и не выполнена', () => {
@@ -192,29 +192,55 @@ test('просроченное одним нажатием на сегодня',
   assert.deepEqual(rescheduleOverdue(list, TODAY).map((t) => t.due), [TODAY, '2026-11-20', '2026-11-01']);
 });
 
-test('отмена после отметки повторяющейся задачи: снова одна открытая задача, в «Готово» пусто', () => {
-  const list = [make('r', { due: TODAY, repeat: 'day' })];
-  const snapshot = list;
-  const { todos } = completeTodo(list, 'r', TODAY, NOON);
+test('снятие отметки со сделанного раза: следующий раз убирается, повтор возвращается', () => {
+  const list = [make('r', { due: TODAY, repeat: 'week', repeatDay: 2 })];
+  const { todos, next } = completeTodo(list, 'r', TODAY, NOON);
   assert.equal(todos.length, 2);
-  // «Вернуть» возвращает снимок до действия
-  assert.deepEqual(snapshot.filter((t) => !t.done).length, 1);
-  assert.equal(snapshot.filter((t) => t.done).length, 0);
+  const back = toggleTodo(todos, 'r');
+  assert.deepEqual(back.map((t) => [t.id, t.done, t.repeat, t.repeatDay, t.due]), [['r', false, 'week', 2, TODAY]]);
+  assert.equal('series' in back[0], false);
+  // следующий раз уже отметили: его не трогаем, снятая копия остаётся обычной задачей
+  const both = toggleTodo(toggleTodo(todos, next.id), 'r');
+  assert.equal(both.length, 2);
+  assert.equal(both.find((t) => t.id === 'r').repeat, null);
 });
 
-test('примеры: убираются одной кнопкой, правка делает пример обычной задачей', () => {
-  const [a, b] = addTodo(addTodo([], { title: 'пример', sample: true }), 'своя');
-  assert.equal(b.sample, true);
+test('перенос одного раза не меняет день недели повтора', () => {
+  const [fri] = addTodo([], { title: 'Отчёт', due: '2026-11-13', repeat: 'week' });
+  assert.equal(fri.repeatDay, 5);
+  const moved = rescheduleOverdue([{ ...fri, due: '2026-11-09' }], TODAY);
+  assert.equal(moved[0].repeatDay, 5);
+  const { next } = completeTodo(moved, fri.id, TODAY);
+  assert.equal(next.due, '2026-11-13', 'следующий раз снова в пятницу');
+  // в редакторе срок и повтор задаются заново: день следует за сроком
+  const edited = updateTodo([fri], fri.id, { due: '2026-11-16', repeat: 'week' });
+  assert.equal(edited[0].repeatDay, 1);
+  assert.equal(updateTodo([fri], fri.id, { due: '2026-11-16' })[0].repeatDay, 5, 'быстрый перенос день не меняет');
+});
+
+test('примеры: убираются одной кнопкой, любое действие делает пример своей задачей', () => {
+  const [a, b] = addTodo(addTodo([], { title: 'пример', sample: 'trip', due: TODAY, repeat: 'day', steps: [{ title: 'шаг' }] }), 'своя');
+  assert.equal(b.sample, 'trip');
   assert.equal('sample' in a, false);
   assert.deepEqual(removeSamples([a, b]).map((t) => t.title), ['своя']);
-  assert.equal('sample' in updateTodo([b], b.id, { title: 'моя', sample: false })[0], false);
-  const { next } = completeTodo([{ ...b, due: TODAY, repeat: 'day' }], b.id, TODAY);
-  assert.equal(next.sample, true, 'следующий раз примера тоже пример');
+  const mine = (list) => 'sample' in list.find((t) => t.id === b.id);
+  assert.equal(mine(updateTodo([b], b.id, { title: 'моя' })), false, 'правка');
+  assert.equal(mine(toggleStep([b], b.id, b.steps[0].id)), false, 'шаг');
+  assert.equal(mine(rescheduleOverdue([{ ...b, due: '2026-11-01' }], TODAY)), false, 'перенос');
+  assert.equal(mine(addSteps([b], b.id, 'ещё').todos), false, 'новый шаг');
+  const done = completeTodo([b], b.id, TODAY);
+  assert.equal('sample' in done.next, false, 'следующий раз уже свой');
+  assert.equal(mine(done.todos), false);
 });
 
-test('вставка списка в шаги: строка = шаг', () => {
+test('вставка списка в шаги: строка = шаг, лишнее сверх лимита возвращается', () => {
   const list = [make('a', { steps: [{ id: 's', title: 'было', done: true }] })];
-  const next = addSteps(list, 'a', 'Паспорт\r\n\n  Билеты  \nЗарядка');
-  assert.deepEqual(next[0].steps.map((s) => s.title), ['было', 'Паспорт', 'Билеты', 'Зарядка']);
-  assert.equal(addSteps(list, 'a', ' \n '), list);
+  const { todos } = addSteps(list, 'a', 'Паспорт\r\n\n  Билеты  \nЗарядка');
+  assert.deepEqual(todos[0].steps.map((s) => s.title), ['было', 'Паспорт', 'Билеты', 'Зарядка']);
+  assert.equal(addSteps(list, 'a', ' \n ').todos, list);
+  const many = Array.from({ length: 35 }, (_, i) => `шаг ${i}`).join('\n');
+  const res = addSteps(list, 'a', many);
+  assert.equal(res.todos[0].steps.length, MAX_STEPS);
+  assert.equal(res.rest.length, 35 - (MAX_STEPS - 1));
+  assert.equal(res.rest[0], `шаг ${MAX_STEPS - 1}`);
 });

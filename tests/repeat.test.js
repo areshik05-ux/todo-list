@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { nextDue, firstDue, isRepeat } from '../js/repeat.js';
-import { addMonths, weekdayOf, nextMonday } from '../js/dates.js';
+import { nextDue, firstDue, isRepeat, isRepeatDay, repeatDayFor } from '../js/repeat.js';
+import { addMonths, weekdayOf, nextMonday, withDay } from '../js/dates.js';
 
 const TODAY = '2026-11-10'; // вторник
 
@@ -35,4 +35,15 @@ test('первый срок и проверка значения', () => {
   assert.equal(weekdayOf(TODAY), 2);
   assert.equal(nextMonday(TODAY), '2026-11-16');
   assert.equal(nextMonday('2026-11-16'), '2026-11-23', 'в понедельник следующая неделя');
+});
+
+test('ежемесячный повтор помнит число: после 28 февраля снова 31-е', () => {
+  assert.equal(nextDue('month', '2026-02-28', '2026-02-28', 31), '2026-03-31');
+  assert.equal(nextDue('month', '2026-01-31', '2026-01-31', 31), '2026-02-28');
+  assert.equal(repeatDayFor('month', null, '2026-01-31'), 31);
+  assert.equal(repeatDayFor('week', null, '2026-11-13'), 5);
+  assert.equal(repeatDayFor('week', 9, '2026-11-13'), 5, 'неверный якорь берётся из срока');
+  assert.equal(repeatDayFor('day', 3, TODAY), null);
+  assert.equal(isRepeatDay('month', 0), false);
+  assert.equal(withDay('2026-02-10', 31), '2026-02-28');
 });

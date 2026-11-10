@@ -1,5 +1,5 @@
 import { normalizeTitle, normalizeNotes, normalizeSteps, PRIORITIES } from './todos.js';
-import { isRepeat } from './repeat.js';
+import { isRepeat, isRepeatDay, repeatDayFor } from './repeat.js';
 import { isDateKey } from './dates.js';
 import { normalizeTags } from './parse.js';
 
@@ -25,6 +25,7 @@ export function cleanTodo(t) {
   // у задач из v1 нет даты выполнения: берём дату создания, лучше не знаем
   if (done && completedAt === null) completedAt = createdAt;
   if (!done) completedAt = null;
+  const repeat = !done && isRepeat(t.repeat) && isDateKey(t.due) ? t.repeat : null;
   return {
     id: t.id,
     title,
@@ -37,9 +38,19 @@ export function cleanTodo(t) {
     notes: typeof t.notes === 'string' ? normalizeNotes(t.notes) : '',
     steps: normalizeSteps(t.steps),
     // у сделанной задачи повтора нет: следующий раз уже создан отдельной задачей
-    repeat: !done && isRepeat(t.repeat) && isDateKey(t.due) ? t.repeat : null,
-    ...(t.sample === true ? { sample: true } : {}),
+    repeat,
+    repeatDay: repeat ? repeatDayFor(repeat, t.repeatDay, t.due) : null,
+    ...(typeof t.sample === 'string' && SAMPLE_RE.test(t.sample) ? { sample: t.sample } : {}),
+    ...(done && cleanSeries(t.series) ? { series: cleanSeries(t.series) } : {}),
   };
+}
+
+const SAMPLE_RE = /^[a-z]{1,20}$/;
+
+// Связь сделанного раза повторяющейся задачи со следующим (для снятия отметки).
+function cleanSeries(s) {
+  if (!s || !isRepeat(s.repeat) || typeof s.next !== 'string' || !s.next || s.next.length > 100) return null;
+  return { repeat: s.repeat, repeatDay: isRepeatDay(s.repeat, s.repeatDay) ? s.repeatDay : null, next: s.next };
 }
 
 export function cleanList(data) {
@@ -78,6 +89,32 @@ export function isFirstVisit(storage) {
     return local(storage).getItem(STORAGE_KEY) === null && local(storage).getItem(LEGACY_KEY) === null;
   } catch {
     return false;
+  }
+}
+
+// Запись есть, но это не список задач (обрезана, испорчена руками):
+// прежде чем начать заново, кладём её копию рядом, чтобы ничего не пропало молча.
+export const BACKUP_KEY = 'todo-list:backup';
+
+export function isCorrupt(raw) {
+  if (raw === null || raw === '') return false;
+  try {
+    const data = JSON.parse(raw);
+    return !Array.isArray(data) && !Array.isArray(data?.todos);
+  } catch {
+    return true;
+  }
+}
+
+// { todos, corrupt }: corrupt = запись была испорчена и сохранена в BACKUP_KEY.
+export function loadTodosReport(storage) {
+  try {
+    const raw = local(storage).getItem(STORAGE_KEY);
+    if (!isCorrupt(raw)) return { todos: loadTodos(storage), corrupt: false };
+    if (local(storage).getItem(BACKUP_KEY) === null) local(storage).setItem(BACKUP_KEY, raw);
+    return { todos: [], corrupt: true };
+  } catch {
+    return { todos: [], corrupt: false };
   }
 }
 

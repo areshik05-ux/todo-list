@@ -4,13 +4,13 @@ import {
   inView, countViews, todayProgress, matchesQuery, sortTodos, sortDone, VIEWS,
 } from './todos.js';
 import {
-  loadTodos, saveTodos, loadSettings, saveSettings, exportJSON, importJSON, storageAvailable, isFirstVisit,
+  loadTodos, loadTodosReport, saveTodos, loadSettings, saveSettings, exportJSON, importJSON, storageAvailable, isFirstVisit,
   STORAGE_KEY, SETTINGS_KEY,
 } from './storage.js';
 import { parseQuickAdd, splitTags } from './parse.js';
 import { todayKey, toKey, fromKey, addDays, nextMonday, daysBetween } from './dates.js';
 import { createI18n, detectLang } from './i18n.js';
-import { sampleTodos } from './samples.js';
+import { sampleTodos, translateSamples } from './samples.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -49,7 +49,8 @@ const TOAST_MS = 6000;
 const MAX_IMPORT_BYTES = 2_000_000;
 
 const firstVisit = isFirstVisit();
-let todos = loadTodos();
+const loaded = loadTodosReport();
+let todos = loaded.todos;
 const settings = loadSettings();
 settings.lang ??= detectLang();
 let i18n = createI18n(settings.lang);
@@ -179,15 +180,21 @@ function render(focus = currentFocus()) {
       : t('tasks', { n: total });
 
   const defaultHint = view === 'today' ? t('add.hintToday') : view === 'upcoming' ? t('add.hintUpcoming') : '';
-  hint.textContent = defaultHint ? `${t('add.hint')}. ${defaultHint}.` : `${t('add.hint')}.`;
+  // сообщение «Сначала напишите задачу» держится, пока человек не начнёт печатать
+  if (hint.classList.contains('is-error')) hint.textContent = `${t('add.empty')}.`;
+  else hint.textContent = defaultHint ? `${t('add.hint')}. ${defaultHint}.` : `${t('add.hint')}.`;
 
   dragEnabled = !query && settings.sort === 'manual' && (view === 'all' || view === 'today');
   listWrap.classList.toggle('no-drag', !dragEnabled);
 
   const nodes = [];
+  const oldLists = $$(':scope > ul.list', listWrap);
   groups.forEach((group, i) => {
-    const ul = document.createElement('ul');
+    // список и строки, которые не менялись, остаются в DOM на месте:
+    // не теряется фокус и не пересчитывается раскладка всего списка
+    const ul = oldLists[i] ?? document.createElement('ul');
     ul.className = 'list';
+    ul.removeAttribute('aria-labelledby');
     if (group.title) {
       const h = document.createElement('h2');
       h.className = 'group-title';
@@ -217,16 +224,24 @@ function render(focus = currentFocus()) {
         nodes.push(h);
       }
     }
-    ul.append(...group.items.map((todo) => renderItem(todo, today)));
+    patchChildren(ul, group.items.map((todo) => cachedItem(todo, today)));
     nodes.push(ul);
   });
-  listWrap.replaceChildren(...(total ? nodes : []));
+  patchChildren(listWrap, total ? nodes : []);
+  // строки, которых больше нет на экране, из запаса убираем
+  const shown = new Set(groups.flatMap((g) => g.items.map((todo) => todo.id)));
+  for (const id of rowCache.keys()) if (!shown.has(id)) rowCache.delete(id);
 
   empty.hidden = total > 0;
   emptyText.textContent = todos.length === 0 ? t('empty.first')
     : query ? t('empty.search', { q: query })
       : view === 'today' ? (progress.done ? t('empty.todayDone', { n: progress.done }) : t('empty.todayNone'))
         : t(`empty.${view}`);
+
+  // тихий итог дня: всё, что было на сегодня, сделано
+  const dayDone = !query && view === 'today' && progress.total > 0 && progress.done === progress.total;
+  $('#day-done').hidden = !dayDone;
+  if (dayDone) $('#day-done-text').textContent = t('dayDone');
 
   // строка «Это примеры… Убрать примеры», пока примеры с первого визита на месте
   samplesBar.hidden = query !== '' || !(view === 'all' || view === 'today') || !todos.some((todo) => todo.sample);
@@ -267,6 +282,33 @@ function highlight(target, text) {
   }
   parts.push(text.slice(pos));
   target.replaceChildren(...parts);
+}
+
+// Привести детей parent к списку desired, двигая только то, что не на месте.
+function patchChildren(parent, desired) {
+  const keep = new Set(desired);
+  desired.forEach((node, i) => {
+    const current = parent.children[i];
+    if (current === node) return;
+    // старую версию строки меняем на новую на том же месте, остальные не двигаем
+    if (current && !keep.has(current)) current.replaceWith(node);
+    else parent.insertBefore(node, current ?? null);
+  });
+  while (parent.children.length > desired.length) parent.lastElementChild.remove();
+}
+
+// Строка перерисовывается, только если поменялось то, что в ней видно:
+// отметка одной задачи не пересобирает остальные двести.
+const rowCache = new Map(); // id → { key, li }
+
+function cachedItem(todo, today) {
+  if (editingId === todo.id) return renderItem(todo, today);
+  const key = JSON.stringify([todo, today, query, settings.lang, openDetails.has(todo.id), menu?.id === todo.id]);
+  const hit = rowCache.get(todo.id);
+  if (hit?.key === key && !hit.li.classList.contains('is-leaving')) return hit.li;
+  const li = renderItem(todo, today);
+  rowCache.set(todo.id, { key, li });
+  return li;
 }
 
 function renderItem(todo, today) {
@@ -331,7 +373,7 @@ function renderItem(todo, today) {
     sr.className = 'visually-hidden';
     sr.textContent = `${t('task.repeats')} `;
     const text = document.createElement('span');
-    text.textContent = repeatLabel(todo.repeat, todo.due);
+    text.textContent = repeatLabel(todo.repeat, todo.repeatDay, todo.due);
     rep.append(svgIcon('repeat'), sr, text);
     meta.append(rep);
   }
@@ -441,15 +483,24 @@ function renderDetails(todo) {
   return box;
 }
 
-function repeatLabel(repeat, due) {
-  return repeat === 'week' && due ? t(`repeat.on${fromKey(due).getDay()}`) : t(`repeat.${repeat}`);
+// «По пятницам» для еженедельного повтора, иначе «Каждый день» и т. п.
+function repeatLabel(repeat, day, due) {
+  const weekday = Number.isInteger(day) ? day : due ? fromKey(due).getDay() : null;
+  return repeat === 'week' && weekday !== null ? t(`repeat.on${weekday}`) : t(`repeat.${repeat}`);
 }
 
 function addStepsInline(field, text) {
   const id = field.closest('.todo').dataset.id;
-  const next = addSteps(todos, id, text);
-  if (next === todos) return;
-  commit(next, { focus: { id, selector: '.details-step-new' } });
+  const { todos: next, rest } = addSteps(todos, id, text);
+  if (next !== todos) {
+    commit(next, { focus: { id, selector: '.details-step-new' } });
+    announce(t('steps.added', { step: next.find((x) => x.id === id).steps.at(-1).title }));
+  }
+  if (!rest.length) return;
+  // не влезло в лимит: строки остаются в поле, ничего не теряется молча
+  const field2 = listWrap.querySelector(`.todo[data-id="${CSS.escape(id)}"] .details-step-new`) ?? field;
+  field2.value = rest.join(' ');
+  showToast(t('steps.limit', { n: MAX_STEPS }));
 }
 
 function renderEditor(todo) {
@@ -500,12 +551,18 @@ function readSteps(editor) {
 
 function addStepFromInput(field) {
   const editor = field.closest('.editor');
-  if (!field.value.trim()) return;
+  if (!field.value.trim()) return false;
+  if ($$('.step-edit', editor).length >= MAX_STEPS) {
+    showToast(t('steps.limit', { n: MAX_STEPS }));
+    return false;
+  }
   const row = stepEditRow({ title: field.value, done: false });
   row.dataset.id = `new-${Date.now().toString(36)}-${$$('.step-edit', editor).length}`;
   $('.step-list', editor).append(row);
+  announce(t('steps.added', { step: field.value.trim() }));
   field.value = '';
   numberSteps(editor);
+  return true;
 }
 
 // После перерисовки возвращаем фокус туда, где был пользователь,
@@ -561,6 +618,7 @@ function applyLanguage() {
   document.documentElement.lang = settings.lang;
   $('meta[name="description"]').content = t('meta.description');
   translate();
+  document.documentElement.classList.remove('i18n-pending');
   for (const btn of $$('[data-lang]')) btn.setAttribute('aria-pressed', String(btn.dataset.lang === settings.lang));
   for (const [btn, key] of [[themeBtn, 'theme.dark'], [helpBtn, 'menu.shortcuts'], [dataBtn, 'data.label']]) {
     btn.setAttribute('aria-label', t(key));
@@ -589,10 +647,10 @@ function currentParse() {
   return parseQuickAdd(input.value, todayKey(), { ignore: ignoreTokens });
 }
 
-function chipText(token, today, due) {
+function chipText(token, today, parsed) {
   if (token.type === 'date') return i18n.groupDate(token.value, today);
   if (token.type === 'priority') return `P${token.value}`;
-  if (token.type === 'repeat') return repeatLabel(token.value, due);
+  if (token.type === 'repeat') return repeatLabel(token.value, parsed.repeatDay, parsed.due);
   return token.value;
 }
 
@@ -609,7 +667,7 @@ function updateChips() {
     const icon = { date: 'calendar', priority: 'flag', tag: 'hash', repeat: 'repeat' }[token.type];
     if (token.type === 'priority') chip.classList.add(`p${token.value}`);
     const text = document.createElement('span');
-    text.textContent = chipText(token, today, parsed.due);
+    text.textContent = chipText(token, today, parsed);
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.className = 'chip-remove';
@@ -622,7 +680,15 @@ function updateChips() {
   }));
 }
 
+function clearInputError() {
+  if (!hint.classList.contains('is-error')) return;
+  input.removeAttribute('aria-invalid');
+  hint.classList.remove('is-error');
+  render();
+}
+
 input.addEventListener('input', () => {
+  clearInputError();
   if (!input.value.trim()) ignoreTokens = [];
   updateChips();
 });
@@ -640,8 +706,13 @@ form.addEventListener('submit', (e) => {
   const parsed = currentParse();
   if (!parsed.title) {
     input.value = '';
+    input.setAttribute('aria-invalid', 'true');
+    hint.classList.add('is-error');
+    hint.textContent = `${t('add.empty')}.`;
+    input.focus();
     return;
   }
+  clearInputError();
   const today = todayKey();
   if (!parsed.due && view === 'today') parsed.due = today;
   if (!parsed.due && view === 'upcoming') parsed.due = addDays(today, 1);
@@ -696,7 +767,7 @@ function whenText(due, today) {
   const diff = daysBetween(today, due);
   if (diff === 0) return t('date.today').toLowerCase();
   if (diff === 1) return t('date.tomorrow').toLowerCase();
-  return i18n.groupDate(due, today);
+  return i18n.shortDate(due);
 }
 
 // Перенести одну задачу (меню строки, клавиши T и M) или все просроченные.
@@ -735,16 +806,20 @@ function openMenu(opener) {
   closeMenu(false);
   menu = { id: li.dataset.id, opener };
   opener.setAttribute('aria-expanded', 'true');
-  rowMenu.setAttribute('aria-label', opener.getAttribute('aria-label'));
   const todo = todos.find((x) => x.id === menu.id);
+  rowMenu.setAttribute('aria-label', t('menu.label', { title: todo?.title ?? '' }));
   const today = todayKey();
+  const shown = new Set();
   for (const item of $$('[data-action]', rowMenu)) {
     const { action } = item.dataset;
     const due = DUE_ACTIONS[action]?.(today);
     const hint = $('.menu-hint', item);
     if (hint) hint.textContent = due ? i18n.shortDate(due) : '';
-    // для сделанной задачи перенос не нужен; вариант, равный текущему сроку, тоже
-    item.hidden = (action !== 'delete' && (todo?.done ?? false)) || (due !== undefined && due === todo?.due);
+    // для сделанной задачи перенос не нужен; вариант, равный текущему сроку
+    // или уже показанной дате (в воскресенье «завтра» и есть следующая неделя), тоже
+    item.hidden = (action !== 'delete' && (todo?.done ?? false))
+      || (due !== undefined && (due === todo?.due || shown.has(due)));
+    if (due !== undefined && !item.hidden) shown.add(due);
   }
   $('.menu-sep', rowMenu).hidden = todo?.done ?? false;
   rowMenu.hidden = false;
@@ -771,8 +846,9 @@ function closeMenu(returnFocus) {
   const { opener, id } = menu;
   menu = null;
   rowMenu.hidden = true;
-  const current = opener.isConnected ? opener
-    : listWrap.querySelector(`.todo[data-id="${CSS.escape(id)}"] .todo-more`);
+  const selector = opener.matches('.meta-due') ? 'button.meta-due' : '.todo-more';
+  const row = listWrap.querySelector(`.todo[data-id="${CSS.escape(id)}"]`);
+  const current = opener.isConnected ? opener : row && ($(selector, row) ?? $('.todo-more', row));
   current?.setAttribute('aria-expanded', 'false');
   if (returnFocus) current?.focus();
 }
@@ -780,8 +856,9 @@ function closeMenu(returnFocus) {
 rowMenu.addEventListener('click', (e) => {
   const item = e.target.closest('[data-action]');
   if (!item || !menu) return;
-  const { id } = menu;
+  const { id, opener } = menu;
   const li = listWrap.querySelector(`.todo[data-id="${CSS.escape(id)}"]`);
+  const selector = opener.matches('.meta-due') ? 'button.meta-due' : '.todo-more';
   closeMenu(false);
   if (!li) return;
   if (item.dataset.action === 'delete') {
@@ -790,10 +867,15 @@ rowMenu.addEventListener('click', (e) => {
   }
   if (item.dataset.action === 'pick') {
     startEditing(li, 'input[name="due"]');
+    try {
+      $('.is-editing input[name="due"]', listWrap)?.showPicker();
+    } catch {
+      // старые браузеры: поле даты в фокусе, календарь откроется по клику
+    }
     return;
   }
   const index = $$('.todo', listWrap).indexOf(li);
-  reschedule(id, DUE_ACTIONS[item.dataset.action](todayKey()), { id, selector: '.todo-more', index });
+  reschedule(id, DUE_ACTIONS[item.dataset.action](todayKey()), { id, selector, index });
 });
 
 rowMenu.addEventListener('keydown', (e) => {
@@ -859,7 +941,8 @@ function editedTodos() {
   const editor = $('.editor', listWrap);
   if (!editingId || !editor) return todos;
   const f = editor.elements;
-  const next = updateTodo(todos, editingId, {
+  const original = todos.find((x) => x.id === editingId);
+  const changes = {
     title: f.title.value,
     due: f.due.value || null,
     priority: Number(f.priority.value),
@@ -868,8 +951,12 @@ function editedTodos() {
     notes: f.notes.value,
     steps: readSteps(editor),
     today: todayKey(),
-  });
-  const before = JSON.stringify(todos.find((x) => x.id === editingId));
+  };
+  // срок и повтор не трогали: день недели повтора остаётся прежним
+  if (changes.due === original.due && changes.repeat === original.repeat) changes.repeatDay = original.repeatDay;
+  const next = updateTodo(todos, editingId, changes);
+  // пометка примера не считается правкой: открыли и закрыли пример, он остался примером
+  const before = JSON.stringify({ ...original, sample: undefined });
   const after = JSON.stringify(next.find((x) => x.id === editingId));
   return before === after ? todos : next;
 }
@@ -964,11 +1051,15 @@ listWrap.addEventListener('paste', (e) => {
     addStepsInline(field, text);
     return;
   }
-  for (const line of text.split(/\r?\n/)) {
+  const lines = text.split(/\r?\n/).filter((line) => line.trim());
+  let added = 0;
+  for (const line of lines) {
     field.value = line;
-    addStepFromInput(field);
+    if (!addStepFromInput(field)) break;
+    added += 1;
   }
-  field.value = '';
+  // что не влезло, остаётся в поле
+  field.value = lines.slice(added).join(' ');
 });
 
 listWrap.addEventListener('dblclick', (e) => {
@@ -1014,10 +1105,23 @@ document.addEventListener('click', (e) => {
   if (editingId && !e.target.closest?.('.editor, .toast')) flushEditor();
 }, true);
 
+// Пока кнопка мыши или палец нажаты, фокус уходит из редактора, но клика ещё
+// не было. Перерисовка в этот момент убрала бы кнопку из-под курсора, и клик
+// потерялся бы, поэтому сохраняем правку уже по клику (обработчик выше).
+// Если клика так и не будет (прокрутка пальцем), редактор остаётся открытым.
+let pointerDown = false;
+document.addEventListener('pointerdown', () => { pointerDown = true; }, true);
+for (const type of ['pointerup', 'pointercancel']) {
+  document.addEventListener(type, () => { pointerDown = false; }, true);
+}
+
 listWrap.addEventListener('focusout', (e) => {
   const editor = e.target.closest('.editor');
-  // relatedTarget пуст, когда переключились в другое окно: правку не трогаем
-  if (!editor || !e.relatedTarget || editor.contains(e.relatedTarget)) return;
+  // relatedTarget пуст, когда переключились в другое окно: правку не трогаем.
+  // Tab в сообщение с «Вернуть» или в меню строки правку тоже не трогает:
+  // иначе сообщение закрылось бы раньше, чем на него нажали.
+  if (!editor || !e.relatedTarget || editor.contains(e.relatedTarget) || pointerDown) return;
+  if (e.relatedTarget.closest('.toast, #row-menu')) return;
   flushEditor();
 });
 
@@ -1129,6 +1233,7 @@ function applyUndo() {
   for (const timer of lingering.values()) clearTimeout(timer);
   lingering.clear();
   commit(snapshot, { focus: focus ?? undefined });
+  announce(t('toast.restored'));
 }
 
 toastUndo.addEventListener('click', () => {
@@ -1195,6 +1300,7 @@ window.addEventListener('hashchange', () => {
   view = viewFromHash();
   editingId = null;
   closeMenu(false);
+  openDetails.clear(); // в новом разделе всё свёрнуто
   if (query) {
     query = '';
     search.value = '';
@@ -1220,6 +1326,11 @@ for (const btn of $$('[data-lang]')) {
     settings.lang = btn.dataset.lang;
     saveSettings(settings);
     applyLanguage();
+    const translated = translateSamples(todos, t);
+    if (translated !== todos) {
+      todos = translated;
+      storageWarning.hidden = saveTodos(todos);
+    }
     render();
   });
 }
@@ -1378,7 +1489,7 @@ document.addEventListener('keydown', (e) => {
     default:
   }
 
-  if (!row || row.classList.contains('is-editing')) return;
+  if (!row || row.classList.contains('is-editing') || target.closest('.todo-details')) return;
 
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
     e.preventDefault();
@@ -1428,6 +1539,7 @@ setInterval(() => {
 }, 60_000);
 
 storageWarning.hidden = storageAvailable();
+$('#storage-corrupt').hidden = !loaded.corrupt;
 applyTheme();
 applyLanguage();
 render();

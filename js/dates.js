@@ -74,3 +74,11 @@ export function addMonths(key, months) {
 export function nextMonday(today) {
   return nextWeekday(today, 1);
 }
+
+// Тот же месяц, другое число; если такого числа нет (31 февраля), последний день месяца.
+export function withDay(key, day) {
+  const date = fromKey(key);
+  const last = new Date(date.getFullYear(), date.getMonth() + 1, 0, 12).getDate();
+  date.setDate(Math.min(day, last));
+  return toKey(date);
+}
