@@ -2,7 +2,7 @@
 // поэтому её легко проверить тестами и сохранить в localStorage.
 // Порядок массива и есть ручной порядок задач.
 
-import { isDateKey } from './dates.js';
+import { isDateKey, addDays, weekdayOf } from './dates.js';
 import { normalizeTags } from './parse.js';
 import { isRepeat, firstDue, nextDue, repeatDayFor } from './repeat.js';
 
@@ -303,4 +303,65 @@ export function sortTodos(todos, sort) {
 // Выполненные: сначала закрытые последними.
 export function sortDone(todos) {
   return [...todos].sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0));
+}
+
+/* День: что можно взять на сегодня, неделя вперёд, итог недели */
+
+// Задачи, которые можно взять на сегодня: без срока и на ближайшие 7 дней.
+// Сначала с датой (ближайшие выше), потом без даты в своём порядке.
+// Просроченные сюда не входят: они и так в «Сегодня».
+export function suggestForToday(todos, today, days = 7) {
+  const horizon = addDays(today, days);
+  const open = todos.filter((t) => !t.done);
+  const dated = open.filter((t) => t.due !== null && t.due > today && t.due <= horizon);
+  const undated = open.filter((t) => t.due === null);
+  return [...sortTodos(dated, 'due'), ...undated];
+}
+
+// Все открытые задачи со сроком по сегодня (и просроченные) переносятся на target.
+export function moveOpenTo(todos, today, target) {
+  return todos.map((t) => (!t.done && isDueBy(t, today) ? { ...own(t), due: target } : t));
+}
+
+// Понедельник недели, в которую входит день.
+export function weekStart(day) {
+  return addDays(day, -((weekdayOf(day) + 6) % 7));
+}
+
+// Сколько сделано с понедельника этой недели по сегодня.
+export function doneThisWeek(todos, today, dayKeyOf) {
+  const start = weekStart(today);
+  return todos.filter((t) => {
+    if (!t.done || t.completedAt === null) return false;
+    const day = dayKeyOf(t.completedAt);
+    return day >= start && day <= today;
+  }).length;
+}
+
+// Нагрузка на 7 дней вперёд: сегодня считает и просроченные, прошлых дней нет.
+export function weekLoad(todos, today, days = 7) {
+  return Array.from({ length: days }, (_, i) => {
+    const date = addDays(today, i);
+    const count = todos.filter((t) => !t.done && (i === 0 ? isDueBy(t, today) : t.due === date)).length;
+    return { date, count };
+  });
+}
+
+// Приветствие по часу: утро 5–11, день 12–17, вечер 18–4.
+export function greetingKey(hour) {
+  if (hour >= 5 && hour < 12) return 'morning';
+  if (hour >= 12 && hour < 18) return 'afternoon';
+  return 'evening';
+}
+
+// Выполненные по дням закрытия, свежие сверху.
+export function groupDoneByDay(todos, dayKeyOf) {
+  const groups = [];
+  for (const t of sortDone(todos.filter((x) => x.done))) {
+    const day = t.completedAt === null ? null : dayKeyOf(t.completedAt);
+    const last = groups.at(-1);
+    if (last && last.day === day) last.items.push(t);
+    else groups.push({ day, items: [t] });
+  }
+  return groups;
 }

@@ -179,6 +179,37 @@ const ru = {
   'storage.download': 'Скачать данные',
   'group.today': 'На сегодня',
   'dayDone': 'На сегодня всё. Отдыхайте',
+  'greeting.morning': 'Доброе утро',
+  'greeting.afternoon': 'Добрый день',
+  'greeting.evening': 'Добрый вечер',
+  'status.empty': 'Список пока пуст. Запишите, что держите в голове: одна строка и Enter.',
+  'status.pick': 'На сегодня пока ничего. Возьмите задачу из списка ниже или добавьте новую.',
+  'status.free': 'Сегодня свободно. Если что-то появится, запишите сюда.',
+  'status.planned': 'На сегодня {tasks}.',
+  'status.progress': 'Сделано {done} из {total}. Осталось: {left}.',
+  'status.rest': 'Можно отдохнуть.',
+  'status.week': 'За эту неделю сделано: {n}.',
+  'status.full': 'Если это много, часть можно перенести на завтра.',
+  'ring.label': 'Сделано {done} из {total}',
+  'plan.title': 'Можно взять на сегодня',
+  'plan.toggle': 'Свернуть или развернуть',
+  'plan.take': 'На сегодня',
+  'plan.takeLabel': 'Взять на сегодня: «{title}»',
+  'plan.noDate': 'Без срока',
+  'plan.more': 'Показать ещё {n}',
+  'plan.less': 'Свернуть',
+  'plan.openAll': 'Открыть все задачи',
+  'plan.again': 'Взять ещё на сегодня',
+  'toast.taken': 'Взято на сегодня: «{title}»',
+  'evening.moveRest': 'Перенести оставшиеся на завтра',
+  'toast.movedRest': { one: '{n} задача перенесена на завтра', few: '{n} задачи перенесены на завтра', many: '{n} задач перенесено на завтра', other: '{n} задачи перенесено на завтра' },
+  'week.label': 'Ближайшие 7 дней',
+  'week.day': '{date}: {tasks}',
+  'week.dayNone': '{date}: задач нет',
+  'week.today': 'Сегодня, {date}',
+  'done.week': 'За эту неделю: {n}',
+  'done.today': 'Сегодня',
+  'done.yesterday': 'Вчера',
 };
 
 const en = {
@@ -355,6 +386,37 @@ const en = {
   'storage.download': 'Download the data',
   'group.today': 'Due today',
   'dayDone': 'That’s all for today. Time to rest',
+  'greeting.morning': 'Good morning',
+  'greeting.afternoon': 'Good afternoon',
+  'greeting.evening': 'Good evening',
+  'status.empty': 'Your list is empty for now. Write down what’s on your mind: one line, then Enter.',
+  'status.pick': 'Nothing planned for today yet. Take a task from the list below or add a new one.',
+  'status.free': 'Today is free. If something comes up, add it here.',
+  'status.planned': '{tasks} for today.',
+  'status.progress': '{done} of {total} done. {left} left.',
+  'status.rest': 'Time to rest.',
+  'status.week': 'Done this week: {n}.',
+  'status.full': 'If that’s a lot, move some to tomorrow.',
+  'ring.label': '{done} of {total} done',
+  'plan.title': 'Pick for today',
+  'plan.toggle': 'Show or hide',
+  'plan.take': 'Today',
+  'plan.takeLabel': 'Do today: “{title}”',
+  'plan.noDate': 'No date',
+  'plan.more': 'Show {n} more',
+  'plan.less': 'Show less',
+  'plan.openAll': 'Open all tasks',
+  'plan.again': 'Pick more for today',
+  'toast.taken': 'Added to today: “{title}”',
+  'evening.moveRest': 'Move the rest to tomorrow',
+  'toast.movedRest': { one: '{n} task moved to tomorrow', other: '{n} tasks moved to tomorrow' },
+  'week.label': 'Next 7 days',
+  'week.day': '{date}: {tasks}',
+  'week.dayNone': '{date}: no tasks',
+  'week.today': 'Today, {date}',
+  'done.week': 'This week: {n}',
+  'done.today': 'Today',
+  'done.yesterday': 'Yesterday',
 };
 
 export const DICTS = { ru, en };
@@ -424,5 +486,12 @@ export function createI18n(lang) {
     return `${weekdayShort.format(date)}, ${trimDot(dayMonth.format(date))}`;
   };
 
-  return { lang, locale, t, relativeDate, groupDate, longDate, shortDate };
+  const dayNum = new Intl.DateTimeFormat(locale, { day: 'numeric' });
+  // Ячейка полоски недели: «Ср» и «11»
+  const weekCell = (key) => {
+    const date = fromKey(key);
+    return { wd: cap(trimDot(weekdayShort.format(date))), day: dayNum.format(date), long: longDate(date) };
+  };
+
+  return { lang, locale, t, relativeDate, groupDate, longDate, shortDate, weekCell };
 }
