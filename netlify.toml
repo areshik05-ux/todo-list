@@ -13,3 +13,14 @@
     Content-Security-Policy = "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
+
+# service worker и манифест всегда свежие, иначе новая версия придёт только через сутки
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/manifest.webmanifest"
+  [headers.values]
+    Content-Type = "application/manifest+json"
