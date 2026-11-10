@@ -2,6 +2,7 @@ import {
   addTodo, toggleTodo, completeTodo, updateTodo, removeTodo, clearCompleted, moveTodo, moveTodoAfter, moveWithin,
   toggleStep, stepProgress, rescheduleOverdue, addSteps, removeSamples, MAX_STEPS,
   inView, countViews, todayProgress, matchesQuery, sortTodos, sortDone, VIEWS,
+  suggestForToday, moveOpenTo, doneThisWeek, weekLoad, greetingKey, groupDoneByDay,
 } from './todos.js';
 import {
   loadTodos, loadTodosReport, saveTodos, loadSettings, saveSettings, exportJSON, importJSON, storageAvailable, isFirstVisit,
@@ -21,7 +22,6 @@ const chips = $('#chips');
 const hint = $('#add-hint');
 const listWrap = $('#list');
 const empty = $('#empty');
-const emptyText = $('#empty-text');
 const search = $('#search');
 const searchClear = $('#search-clear');
 const sortSelect = $('#sort');
@@ -42,11 +42,32 @@ const editorTemplate = $('#editor-template');
 const stepEditTemplate = $('#step-edit-template');
 const rowMenu = $('#row-menu');
 const samplesBar = $('#samples-bar');
+const main = $('#main');
+const viewTitle = $('#view-title');
+const dayStatus = $('#day-status');
+const dayActions = $('#day-actions');
+const leaf = $('#leaf');
+const ringBox = $('#ring-box');
+const weekList = $('#week-list');
+const planZone = $('#plan-zone');
+const planSection = $('#plan');
+const planToggle = $('#plan-toggle');
+const planBody = $('#plan-body');
+const planList = $('#plan-list');
+const planFoot = $('#plan-foot');
+const planAgain = $('#plan-again');
+const content = $('#content');
 
 const LINGER_MS = 700; // столько отмеченная задача остаётся на месте, прежде чем уйти в «Готово»
 const LEAVE_MS = 240;
 const TOAST_MS = 6000;
 const MAX_IMPORT_BYTES = 2_000_000;
+const NAV = ['today', 'upcoming', 'all', 'done']; // порядок в боковой панели, клавиши 1–4
+const FULL_DAY = 6; // с шести задач на сегодня мягко говорим, что их много
+const EVENING_HOUR = 18; // с 18:00 можно перенести оставшееся на завтра
+const PLAN_SHORT = 3; // столько предложений видно сразу
+const PLAN_MAX = 10; // больше не показываем, дальше ссылка на «Все»
+const CHECK_MS = 700; // столько живёт анимация отметки у строки
 
 const firstVisit = isFirstVisit();
 const loaded = loadTodosReport();
@@ -72,7 +93,13 @@ let dragEnabled = false;
 let renderedDay = todayKey();
 const lingering = new Map(); // id → таймер
 const openDetails = new Set(); // задачи, у которых раскрыты шаги и заметка
+const justChecked = new Set(); // только что отмеченные: у них играет анимация галочки
 let menu = null; // { id, opener } открытого меню строки
+let planExpanded = false; // «Показать ещё»: все предложения, а не три
+let planAgainOpen = false; // день закрыт, но человек сам попросил ещё задач
+let pendingJump = null; // клик по дню недели: куда прокрутить после смены раздела
+let weekFocus = null; // день недели, который получает Tab (переходящий tabindex)
+let renderedSlot = ''; // день, время суток и вечер, для которых нарисована шапка
 
 /* Состояние */
 
@@ -94,8 +121,25 @@ function commit(next, { focus } = {}) {
 
 function viewFromHash() {
   const name = location.hash.replace('#/', '');
-  return VIEWS.includes(name) ? name : 'all';
+  // без адреса открывается «Сегодня»: это главный экран
+  return VIEWS.includes(name) ? name : 'today';
 }
+
+// Сейчас: день, время суток для приветствия и наступил ли вечер.
+function daySlot(now = new Date()) {
+  return `${todayKey(now)}|${greetingKey(now.getHours())}|${now.getHours() >= EVENING_HOUR}`;
+}
+
+// Анимации кольца и листка не играют: первая отрисовка, «Вернуть», смена дня.
+function quietly(fn) {
+  const root = document.documentElement;
+  root.classList.add('is-quiet');
+  fn();
+  requestAnimationFrame(() => requestAnimationFrame(() => root.classList.remove('is-quiet')));
+}
+
+const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const finePointer = () => matchMedia('(hover: hover) and (pointer: fine)').matches;
 
 function dayKeyOf(ms) {
   return toKey(new Date(ms));
@@ -124,7 +168,13 @@ function visibleGroups(today) {
   // открытый редактор не исчезает, даже если «Вернуть» или другая вкладка увели задачу из раздела
   const shown = todos.filter((todo) => inView(todo, view, today, dayKeyOf) || lingering.has(todo.id) || todo.id === editingId);
 
-  if (view === 'done') return [{ items: sortDone(shown) }];
+  if (view === 'done') {
+    // по дням закрытия: «Сегодня · 3», «Вчера · 5», «Пн, 9 нояб. · 2»
+    const groups = groupDoneByDay(shown, dayKeyOf).map((g) => ({ title: doneDayTitle(g.day, today), items: g.items }));
+    // открытый редактор у задачи, которую «Вернуть» сделало снова открытой, остаётся сверху
+    const open = shown.filter((todo) => !todo.done);
+    return open.length ? [{ items: open }, ...groups] : groups;
+  }
 
   if (view === 'upcoming') {
     const groups = [];
@@ -151,13 +201,352 @@ function visibleGroups(today) {
   return [{ items: sortTodos(shown, settings.sort) }];
 }
 
+function doneDayTitle(day, today) {
+  if (day === null) return t('done.earlier');
+  if (day === today) return t('done.today');
+  if (day === addDays(today, -1)) return t('done.yesterday');
+  return i18n.groupDate(day, today);
+}
+
+/* День: шапка «Сегодня», листок, кольцо, неделя, «Можно взять на сегодня» */
+
+// Всё, что нужно шапке дня. open = открытые со сроком по сегодня (и просроченные),
+// done и total = прогресс дня, suggestions = что можно взять на сегодня.
+function dayInfo(today) {
+  const counts = countViews(todos, today);
+  const progress = todayProgress(todos, today, dayKeyOf);
+  return {
+    counts,
+    open: counts.today,
+    done: progress.done,
+    total: progress.total,
+    closed: progress.total > 0 && progress.done === progress.total,
+    suggestions: suggestForToday(todos, today),
+    week: doneThisWeek(todos, today, dayKeyOf),
+    all: todos.length,
+  };
+}
+
+function statusText(d) {
+  if (!d.all) return t('status.empty');
+  if (!d.total) return t(d.suggestions.length ? 'status.pick' : 'status.free');
+  if (d.closed) {
+    const parts = [`${t('progress.allCount', d)}.`, t('status.rest')];
+    if (d.week > d.done) parts.push(t('status.week', { n: d.week }));
+    return parts.join(' ');
+  }
+  const base = d.done
+    ? t('status.progress', { done: d.done, total: d.total, left: d.open })
+    : t('status.planned', { tasks: t('tasks', { n: d.total }) });
+  return d.open >= FULL_DAY ? `${base} ${t('status.full')}` : base;
+}
+
+function renderHeader(d, total) {
+  const today = view === 'today' && !query;
+  main.classList.toggle('is-today', view === 'today');
+  main.classList.toggle('is-search', Boolean(query));
+  const title = query ? t('view.search') : t(`view.${view}`);
+  if (today) {
+    // на экране приветствие, скринридер слышит и название раздела: «Сегодня. Добрый вечер»
+    const name = document.createElement('span');
+    name.className = 'visually-hidden';
+    name.textContent = `${title}. `;
+    viewTitle.replaceChildren(name, t(`greeting.${greetingKey(new Date().getHours())}`));
+  } else {
+    viewTitle.textContent = title;
+  }
+  // «(3) Сегодня · Задачи»: сколько открыто на сегодня, в любом разделе
+  document.title = `${d.open ? `(${d.open}) ` : ''}${title} · ${t('meta.title')}`;
+  const week = view === 'done' && !query && d.week ? ` · ${t('done.week', { n: d.week })}` : '';
+  $('#view-sub').textContent = query ? t('found', { n: total })
+    : today ? i18n.longDate(new Date())
+      : t('tasks', { n: total }) + week;
+  dayStatus.hidden = !today;
+  if (today) dayStatus.textContent = statusText(d);
+  // вечером: перенести всё оставшееся на завтра
+  dayActions.hidden = !(today && new Date().getHours() >= EVENING_HOUR && d.open > 0);
+}
+
+function renderLeaf(d) {
+  const now = new Date();
+  const { month, weekday } = i18n.leafParts(now);
+  $('#leaf-month').textContent = month;
+  $('#leaf-num').textContent = String(now.getDate());
+  $('#leaf-wd').textContent = weekday;
+  leaf.classList.toggle('is-closed', d.closed);
+
+  ringBox.classList.toggle('is-free', !d.total);
+  ringBox.classList.toggle('is-zero', d.total > 0 && !d.done);
+  ringBox.classList.toggle('is-full', d.closed);
+  const off = d.total ? 100 - (d.done / d.total) * 100 : 100;
+  $('#ring-arc').style.setProperty('--ring-off', String(off));
+  $('#ring-count').textContent = d.total ? t('ring.count', d) : '';
+  $('#ring-word').textContent = t(!d.total ? 'ring.free' : d.closed ? 'ring.allDone' : 'ring.done');
+}
+
+// Неделя: сегодня и шесть дней вперёд. Перерисовывается, только если что-то поменялось.
+function renderWeek(d, today) {
+  const load = weekLoad(todos, today);
+  const key = JSON.stringify([load, today, settings.lang, d.closed]);
+  $('#week-note').hidden = load.some((day) => day.count > 0) || d.closed;
+  if (weekList.dataset.key === key) return;
+  weekList.dataset.key = key;
+  const hadFocus = weekList.contains(document.activeElement) ? document.activeElement.dataset.date : null;
+  if (!load.some((day) => day.date === weekFocus)) weekFocus = today;
+  weekList.replaceChildren(...load.map(({ date, count }, i) => {
+    const cell = i18n.weekCell(date);
+    const li = document.createElement('li');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'week-day';
+    btn.dataset.date = date;
+    btn.tabIndex = date === weekFocus ? 0 : -1;
+    const name = i === 0 ? t('week.today', { date: cell.long }) : cell.long;
+    const allDone = i === 0 && d.closed;
+    btn.setAttribute('aria-label', allDone ? t('week.dayDone', { date: name })
+      : count ? t('week.day', { date: name, tasks: t('tasks', { n: count }) }) : t('week.dayNone', { date: name }));
+    if (i === 0) btn.setAttribute('aria-current', 'date');
+    const wd = document.createElement('span');
+    wd.className = 'week-wd';
+    wd.textContent = cell.wd;
+    const num = document.createElement('span');
+    num.className = 'week-num';
+    num.textContent = cell.day;
+    const dots = document.createElement('span');
+    dots.className = 'week-dots';
+    // до трёх точек, дальше три точки и плюс; число задач есть в подписи кнопки
+    for (let k = 0; k < Math.min(count, 3); k += 1) {
+      const dot = document.createElement('span');
+      dot.className = 'week-dot';
+      dots.append(dot);
+    }
+    if (count > 3) {
+      const plus = document.createElement('span');
+      plus.className = 'week-plus';
+      plus.textContent = '+';
+      dots.append(plus);
+    }
+    if (allDone) {
+      const dot = document.createElement('span');
+      dot.className = 'week-dot is-done';
+      dots.append(dot);
+    }
+    btn.append(wd, num, dots);
+    li.append(btn);
+    return li;
+  }));
+  if (hadFocus) $(`.week-day[data-date="${hadFocus}"]`, weekList)?.focus();
+}
+
+const planCache = new Map(); // id → { key, li }
+
+function planRow(todo, today) {
+  const key = JSON.stringify([todo.title, todo.due, today, settings.lang]);
+  const hit = planCache.get(todo.id);
+  if (hit?.key === key) return hit.li;
+  const li = document.createElement('li');
+  li.className = 'plan-row';
+  const text = document.createElement('span');
+  text.className = 'plan-text';
+  const name = document.createElement('span');
+  name.className = 'plan-name';
+  name.textContent = todo.title;
+  name.title = todo.title;
+  const meta = document.createElement('span');
+  meta.className = 'plan-meta';
+  meta.textContent = todo.due ? i18n.relativeDate(todo.due, today) : t('plan.noDate');
+  text.append(name, meta);
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'plan-take';
+  btn.dataset.id = todo.id;
+  btn.setAttribute('aria-label', t('plan.takeLabel', { title: todo.title }));
+  const label = document.createElement('span');
+  label.textContent = t('plan.take');
+  btn.append(svgIcon('plus'), label);
+  li.append(text, btn);
+  planCache.set(todo.id, { key, li });
+  return li;
+}
+
+// Кнопки под предложениями: «Показать ещё N» / «Свернуть» и «Открыть все задачи».
+const planMore = document.createElement('button');
+planMore.type = 'button';
+planMore.className = 'link-btn';
+planMore.id = 'plan-more';
+const planAll = document.createElement('a');
+planAll.className = 'link-btn';
+planAll.href = '#/all';
+
+function renderPlan(d, today) {
+  // пока на сегодня ничего нет, предложения сверху; когда есть, под своими задачами
+  if (d.total === 0) {
+    if (planZone.nextElementSibling !== listWrap) listWrap.before(planZone);
+  } else if (listWrap.nextElementSibling !== planZone) {
+    listWrap.after(planZone);
+  }
+  if (!d.closed) planAgainOpen = false;
+  // день полон (6+) или искать нечего: предложений нет
+  const show = view === 'today' && !query && d.suggestions.length > 0 && d.open < FULL_DAY;
+  const folded = d.closed && !planAgainOpen;
+  planSection.hidden = !show || folded;
+  planAgain.hidden = !show || !folded;
+  if (planSection.hidden) return;
+
+  const open = !settings.planFolded;
+  planToggle.setAttribute('aria-expanded', String(open));
+  planBody.hidden = !open;
+  $('#plan-count').textContent = String(d.suggestions.length);
+  const limit = planExpanded ? PLAN_MAX : PLAN_SHORT;
+  const shown = d.suggestions.slice(0, limit);
+  patchChildren(planList, shown.map((todo) => planRow(todo, today)));
+  const ids = new Set(d.suggestions.map((todo) => todo.id));
+  for (const id of planCache.keys()) if (!ids.has(id)) planCache.delete(id);
+
+  const extra = Math.min(d.suggestions.length, PLAN_MAX) - PLAN_SHORT;
+  const foot = [];
+  if (extra > 0) {
+    planMore.textContent = planExpanded ? t('plan.less') : t('plan.more', { n: extra });
+    planMore.setAttribute('aria-expanded', String(planExpanded));
+    foot.push(planMore);
+  }
+  if (planExpanded && d.suggestions.length > PLAN_MAX) {
+    planAll.textContent = t('plan.openAll');
+    foot.push(planAll);
+  }
+  patchChildren(planFoot, foot);
+}
+
+// Пустые состояния: заголовок, фраза, действие; примеры вписываются в поле.
+function emptyModel(d) {
+  if (query) {
+    if (/^#\S+$/.test(query)) return { title: t('empty.tagTitle', { tag: query }), actions: [['clear-search', t('empty.clearFilter')]] };
+    return { title: t('empty.searchTitle', { q: query }), text: t('empty.searchText'), actions: [['clear-search', t('search.clear')]] };
+  }
+  switch (view) {
+    case 'today': {
+      // пусто совсем: строка в шапке уже всё сказала, здесь только примеры
+      if (!d.all) return { examples: true, ghosts: true };
+      // на сегодня пусто, но есть что взять: предложения сверху, под ними примеры ввода
+      if (d.total || d.suggestions.length) return { examples: true };
+      const next = todos.filter((todo) => !todo.done && todo.due !== null).map((todo) => todo.due).sort()[0];
+      if (!next) return { examples: true };
+      return {
+        text: t('empty.todayFree', { tasks: t('tasks', { n: d.counts.upcoming }), date: i18n.groupDate(next, todayKey()) }),
+        actions: [['open-upcoming', t('empty.openUpcoming')]],
+      };
+    }
+    case 'upcoming':
+      return { title: t('empty.upcomingTitle'), text: t('empty.upcomingText'), actions: [['focus-add', t('empty.plan')]], ghosts: true };
+    case 'done':
+      return { title: t('empty.doneTitle'), text: t('empty.doneText'), actions: [['open-today', t('empty.openToday')]], ghosts: true };
+    default:
+      if (!d.all) {
+        return {
+          title: t('empty.allFirstTitle'),
+          text: t('empty.allFirstText'),
+          actions: [['focus-add', t('empty.addTask')], ['show-samples', t('empty.showSamples')]],
+          examples: true,
+          ghosts: true,
+        };
+      }
+      return { title: t('empty.allDoneTitle'), text: t('empty.allDoneText'), actions: [['open-done', t('empty.openDone')]] };
+  }
+}
+
+function renderEmpty(model) {
+  empty.hidden = !model;
+  const key = JSON.stringify([model, settings.lang]);
+  if (!model || empty.dataset.key === key) return;
+  empty.dataset.key = key;
+  const parts = [];
+  if (model.title) {
+    const h = document.createElement('h2');
+    h.className = 'empty-title';
+    h.tabIndex = -1;
+    h.textContent = model.title;
+    parts.push(h);
+  }
+  if (model.text) {
+    const p = document.createElement('p');
+    p.className = 'empty-text';
+    p.textContent = model.text;
+    parts.push(p);
+  }
+  if (model.actions?.length) {
+    const box = document.createElement('div');
+    box.className = 'empty-actions';
+    model.actions.forEach(([act, label], i) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = i === 0 ? 'btn-primary' : 'link-btn';
+      btn.dataset.act = act;
+      btn.textContent = label;
+      box.append(btn);
+    });
+    parts.push(box);
+  }
+  if (model.examples) {
+    const box = document.createElement('div');
+    box.className = 'examples';
+    const label = document.createElement('p');
+    label.className = 'examples-label';
+    label.id = 'examples-label';
+    label.textContent = t('examples.label');
+    const ul = document.createElement('ul');
+    ul.className = 'examples-list';
+    ul.setAttribute('aria-labelledby', 'examples-label');
+    for (const n of [1, 2, 3]) {
+      const text = t(`example.${n}`);
+      const li = document.createElement('li');
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'example';
+      btn.dataset.example = text;
+      btn.setAttribute('aria-label', t('example.label', { text }));
+      const span = document.createElement('span');
+      span.textContent = text;
+      btn.append(svgIcon('plus'), span);
+      li.append(btn);
+      ul.append(li);
+    }
+    box.append(label, ul);
+    parts.push(box);
+  }
+  if (model.ghosts) {
+    // «тени» строк: показывают, что здесь появится; для скринридера их нет
+    const ghosts = document.createElement('div');
+    ghosts.className = 'ghosts';
+    ghosts.setAttribute('aria-hidden', 'true');
+    for (let i = 0; i < 3; i += 1) {
+      const row = document.createElement('div');
+      row.className = 'ghost';
+      const dot = document.createElement('span');
+      dot.className = 'ghost-dot';
+      const bars = document.createElement('span');
+      bars.className = 'ghost-bars';
+      for (let k = 0; k < 2; k += 1) {
+        const bar = document.createElement('span');
+        bar.className = 'ghost-bar';
+        bars.append(bar);
+      }
+      row.append(dot, bars);
+      ghosts.append(row);
+    }
+    parts.push(ghosts);
+  }
+  empty.replaceChildren(...parts);
+}
+
 let editingRow = null; // строка с открытым редактором на время перерисовки
 
 function render(focus = currentFocus()) {
   editingRow = editingId ? listWrap.querySelector(`.todo.is-editing[data-id="${CSS.escape(editingId)}"]`) : null;
   const today = todayKey();
   renderedDay = today;
-  const counts = countViews(todos, today);
+  renderedSlot = daySlot();
+  const d = dayInfo(today);
+  const { counts } = d;
 
   for (const link of $$('[data-view]')) {
     const name = link.dataset.view;
@@ -165,31 +554,28 @@ function render(focus = currentFocus()) {
     else link.removeAttribute('aria-current');
     const count = $('[data-count]', link);
     count.textContent = counts[name] ? String(counts[name]) : '';
-    const overdue = name === 'today' && counts.overdue > 0;
-    count.classList.toggle('is-overdue', overdue);
-    if (overdue) {
+    if (name === 'today' && counts.overdue > 0) {
       const note = document.createElement('span');
       note.className = 'visually-hidden';
       note.textContent = `, ${t('count.overdue', { n: counts.overdue })}`;
       count.append(note);
     }
+    if (name === 'today' && d.closed) {
+      // день закрыт: вместо пустого счётчика розовая галочка
+      const note = document.createElement('span');
+      note.className = 'visually-hidden';
+      note.textContent = t('count.allDone');
+      count.replaceChildren(svgIcon('tick'), note);
+    }
   }
-
-  const progress = todayProgress(todos, today, dayKeyOf);
-  $('#progress-block').hidden = progress.total === 0;
-  $('#progress-text').textContent = t(progress.done === progress.total ? 'progress.allCount' : 'progress.label', progress);
-  $('#progress').max = Math.max(progress.total, 1);
-  $('#progress').value = progress.done;
 
   const groups = visibleGroups(today);
   const total = groups.reduce((n, g) => n + g.items.length, 0);
 
-  const title = query ? t('view.search') : t(`view.${view}`);
-  $('#view-title').textContent = title;
-  document.title = `${title} · ${t('meta.title')}`;
-  $('#view-sub').textContent = query ? t('found', { n: total })
-    : view === 'today' ? i18n.longDate(new Date())
-      : t('tasks', { n: total });
+  renderHeader(d, total);
+  renderLeaf(d);
+  renderWeek(d, today);
+  renderPlan(d, today);
 
   const defaultHint = view === 'today' ? t('add.hintToday') : view === 'upcoming' ? t('add.hintUpcoming') : '';
   // сообщение «Сначала напишите задачу» держится, пока человек не начнёт печатать
@@ -211,15 +597,16 @@ function render(focus = currentFocus()) {
       const h = document.createElement('h2');
       h.className = 'group-title';
       h.id = `group-${i}`;
-      h.classList.toggle('is-overdue', Boolean(group.overdue));
-      h.textContent = group.title;
+      // к заголовку дня в «Планах» ведёт клик по дню недели
+      if (group.due) h.dataset.due = group.due;
+      h.tabIndex = -1;
+      if (group.overdue) h.append(svgIcon('back'));
+      const name = document.createElement('span');
+      name.textContent = group.title;
       const n = document.createElement('span');
       n.className = 'group-count';
-      n.textContent = String(group.items.length);
-      const sep = document.createElement('span');
-      sep.className = 'visually-hidden';
-      sep.textContent = ': ';
-      h.append(sep, n);
+      n.textContent = ` · ${group.items.length}`;
+      h.append(name, n);
       ul.setAttribute('aria-labelledby', h.id);
       if (group.overdue) {
         // группа с кнопкой: заголовок отдельно, кнопка рядом, а не внутри h2
@@ -244,16 +631,9 @@ function render(focus = currentFocus()) {
   const shown = new Set(groups.flatMap((g) => g.items.map((todo) => todo.id)));
   for (const id of rowCache.keys()) if (!shown.has(id)) rowCache.delete(id);
 
-  empty.hidden = total > 0;
-  emptyText.textContent = todos.length === 0 ? t('empty.first')
-    : query ? t('empty.search', { q: query })
-      : view === 'today' ? (progress.done ? t('empty.todayDone', { n: progress.done }) : t('empty.todayNone'))
-        : t(`empty.${view}`);
-
-  // тихий итог дня: всё, что было на сегодня, сделано
-  const dayDone = !query && view === 'today' && progress.total > 0 && progress.done === progress.total;
-  $('#day-done').hidden = !dayDone;
-  if (dayDone) $('#day-done-text').textContent = t('dayDone');
+  // в первые дни (одна-две задачи) под списком «Сегодня» остаются примеры ввода
+  const teach = view === 'today' && !query && d.all <= 2;
+  renderEmpty(total ? (teach ? { examples: true } : null) : emptyModel(d));
 
   // строка «Это примеры… Убрать примеры», пока примеры с первого визита на месте
   samplesBar.hidden = query !== '' || !(view === 'all' || view === 'today') || !todos.some((todo) => todo.sample);
@@ -351,6 +731,8 @@ function renderItem(todo, today) {
   const li = todoTemplate.content.firstElementChild.cloneNode(true);
   li.dataset.id = todo.id;
   li.classList.toggle('is-done', todo.done);
+  // анимация галочки только у задачи, которую сейчас отметили
+  li.classList.toggle('is-checking', todo.done && justChecked.has(todo.id));
   if (todo.priority) li.classList.add(`p${todo.priority}`);
 
   const handle = $('.handle', li);
@@ -374,7 +756,7 @@ function renderItem(todo, today) {
     return li;
   }
 
-  highlight($('.todo-title', li), todo.title);
+  highlight($('.todo-title-text', li), todo.title);
   const meta = $('.todo-meta', li);
 
   // порядок в строке: срок, повтор, шаги, приоритет, метки
@@ -387,7 +769,8 @@ function renderItem(todo, today) {
     due.classList.toggle('is-today', !todo.done && todo.due === today);
     const label = document.createElement('span');
     label.textContent = i18n.relativeDate(todo.due, today);
-    due.append(svgIcon('calendar'), label);
+    // просроченное без тревоги: часы назад вместо календаря
+    due.append(svgIcon(overdue ? 'back' : 'calendar'), label);
     if (todo.done) {
       due.title = i18n.groupDate(todo.due, today);
     } else {
@@ -646,6 +1029,12 @@ function restoreFocus(focus) {
   if (!focus) return;
   if (focus === 'input') return input.focus();
   if (focus instanceof Element) return focus.focus();
+  if (focus.plan) {
+    // следующая кнопка «На сегодня»; если её нет, задача в списке
+    const btn = $(`.plan-take[data-id="${CSS.escape(focus.plan)}"]`, planList);
+    if (btn && !planSection.hidden && !planBody.hidden) return btn.focus();
+    return restoreFocus({ id: focus.fallback ?? '', selector: '.todo-check', index: 0 });
+  }
   const item = listWrap.querySelector(`.todo[data-id="${CSS.escape(focus.id)}"]`);
   const target = item && $(focus.selector, item);
   if (target) return target.focus();
@@ -714,7 +1103,7 @@ function applyTheme() {
   const dark = settings.theme === 'dark';
   document.documentElement.dataset.theme = settings.theme;
   themeBtn.setAttribute('aria-pressed', String(dark));
-  $('meta[name="theme-color"]').content = dark ? '#111416' : '#f3f5f6';
+  $('meta[name="theme-color"]').content = dark ? '#151921' : '#ffffff';
 }
 
 /* Быстрое добавление */
@@ -845,12 +1234,51 @@ function toggle(li) {
     lingering.set(id, setTimeout(() => leave(id), LINGER_MS));
   }
   const today = todayKey();
+  const wasClosed = dayInfo(today).closed;
+  justChecked.add(id);
+  setTimeout(() => {
+    justChecked.delete(id);
+    listWrap.querySelector(`.todo[data-id="${CSS.escape(id)}"]`)?.classList.remove('is-checking');
+  }, CHECK_MS);
   const result = completeTodo(todos, id, today);
   commit(result.todos, { focus });
   const message = result.next
     ? t('toast.completedNext', { title: before.title, when: whenText(result.next.due, today) })
     : t('toast.completed', { title: before.title });
-  showToast(message, { snapshot, focus: { id, selector: '.todo-check' } });
+  const after = dayInfo(today);
+  // последняя задача дня: кольцо замыкается, листок отрывается, одна фраза для скринридера
+  const closesDay = !wasClosed && after.closed && view === 'today' && !query;
+  showToast(message, {
+    snapshot,
+    focus: { id, selector: '.todo-check' },
+    say: closesDay ? `${message}. ${t('progress.allCount', after)}.` : message,
+  });
+  if (closesDay) closeDay(today);
+}
+
+// Момент «день закрыт». Листок отрывается один раз за календарный день,
+// повторно (сняли и снова отметили) уже нет, после перезагрузки тоже.
+function closeDay(today) {
+  if (settings.closedDay === today) return;
+  settings.closedDay = today;
+  saveSettings(settings);
+  if (reducedMotion()) return;
+  const sheet = document.createElement('span');
+  sheet.className = 'leaf-sheet';
+  for (const sel of ['.leaf-band', '.leaf-month', '.leaf-num', '.leaf-wd']) {
+    const copy = $(sel, leaf).cloneNode(true);
+    copy.removeAttribute('id');
+    for (const el of $$('[id]', copy)) el.removeAttribute('id');
+    $('.leaf-tick', copy)?.remove();
+    sheet.append(copy);
+  }
+  leaf.append(sheet);
+  leaf.classList.add('is-tearing');
+  sheet.addEventListener('animationend', () => sheet.remove(), { once: true });
+  setTimeout(() => {
+    sheet.remove();
+    leaf.classList.remove('is-tearing');
+  }, 800);
 }
 
 // «завтра», «Пн, 16 нояб.» для сообщений о сроке.
@@ -1321,13 +1749,14 @@ function moveByKeyboard(li, step) {
 // Текст дублируем в постоянную live-область: скринридеры не всегда читают
 // только что показанный элемент.
 // action: другая кнопка вместо «Вернуть» ({ label, run }), например «Отметить».
-function showToast(message, { snapshot = null, focus = null, action = null } = {}) {
+// say: что прочесть скринридеру, если это больше текста сообщения (итог дня).
+function showToast(message, { snapshot = null, focus = null, action = null, say = message } = {}) {
   dropUndo();
   toastText.textContent = message;
   toastUndo.textContent = action?.label ?? t('toast.undo');
   toastUndo.hidden = !snapshot && !action;
   toast.hidden = false;
-  announce(message);
+  announce(say);
   undo = { snapshot, focus, action, timer: setTimeout(dropUndo, TOAST_MS) };
 }
 
@@ -1349,8 +1778,9 @@ function applyUndo() {
   if (editingId && !snapshot.some((x) => x.id === editingId)) editingId = null;
   for (const timer of lingering.values()) clearTimeout(timer);
   lingering.clear();
-  // при открытом редакторе фокус остаётся в нём: уход фокуса сохранил бы и закрыл редактор
-  commit(snapshot, { focus: editingId ? undefined : focus ?? undefined });
+  // при открытом редакторе фокус остаётся в нём: уход фокуса сохранил бы и закрыл редактор.
+  // Кольцо и листок возвращаются тихо, без анимации.
+  quietly(() => commit(snapshot, { focus: editingId ? undefined : focus ?? undefined }));
   if (editingId) syncEditor(todos.find((x) => x.id === editingId));
   announce(t('toast.restored'));
 }
@@ -1376,6 +1806,138 @@ $('#samples-remove').addEventListener('click', () => {
   showToast(t('toast.samplesRemoved'), { snapshot, focus: $('#samples-remove') });
 });
 
+/* «Можно взять на сегодня», вечерний перенос, неделя, пустые состояния */
+
+function takeForToday(id) {
+  const todo = todos.find((x) => x.id === id);
+  if (!todo || todo.done) return;
+  const today = todayKey();
+  const list = suggestForToday(todos, today);
+  const at = list.findIndex((x) => x.id === id);
+  // фокус на следующее предложение, а если их больше нет, на саму задачу в списке
+  const next = list[at + 1] ?? list[at - 1];
+  const snapshot = todos;
+  commit(updateTodo(todos, id, { due: today }), { focus: next ? { plan: next.id, fallback: id } : { id, selector: '.todo-check' } });
+  showToast(t('toast.taken', { title: todo.title }), { snapshot, focus: { plan: id, fallback: id } });
+}
+
+planList.addEventListener('click', (e) => {
+  const btn = e.target.closest('.plan-take');
+  if (btn) takeForToday(btn.dataset.id);
+});
+
+planToggle.addEventListener('click', () => {
+  settings.planFolded = !settings.planFolded;
+  saveSettings(settings);
+  render();
+});
+
+planMore.addEventListener('click', () => {
+  planExpanded = !planExpanded;
+  render();
+  planMore.focus();
+});
+
+planAgain.addEventListener('click', () => {
+  planAgainOpen = true;
+  if (settings.planFolded) {
+    settings.planFolded = false;
+    saveSettings(settings);
+  }
+  render();
+  $('.plan-take', planList)?.focus();
+});
+
+$('#move-rest').addEventListener('click', () => {
+  const today = todayKey();
+  const n = todos.filter((x) => !x.done && x.due !== null && x.due <= today).length;
+  if (!n) return;
+  const snapshot = todos;
+  // на телефоне поле в фокусе открыло бы клавиатуру: фокус на заголовок
+  commit(moveOpenTo(todos, today, addDays(today, 1)), { focus: finePointer() ? 'input' : viewTitle });
+  showToast(t('toast.movedRest', { n }), { snapshot, focus: $('#move-rest') });
+});
+
+// Клик по дню недели: сегодня ведёт к списку на сегодня, другой день в «Планы» к его дате.
+function jumpToDay(date) {
+  const target = date === todayKey() ? 'today' : 'upcoming';
+  pendingJump = date;
+  weekFocus = date;
+  if (view === target && !query) return runJump();
+  if (view === target) return setQuery('');
+  location.hash = `#/${target}`;
+  return undefined;
+}
+
+function runJump() {
+  const date = pendingJump;
+  pendingJump = null;
+  if (!date) return;
+  const behavior = reducedMotion() ? 'auto' : 'smooth';
+  if (date === todayKey()) {
+    const first = $('.todo-check', listWrap);
+    content.scrollIntoView({ block: 'start', behavior });
+    (first ?? viewTitle).focus({ preventScroll: true });
+    return;
+  }
+  // ближайший день с задачами, начиная с выбранного; если планов нет, к пустому состоянию
+  const head = $$('h2[data-due]', listWrap).find((h) => h.dataset.due >= date);
+  const target = head ?? $('.empty-title', empty) ?? viewTitle;
+  target.scrollIntoView({ block: 'start', behavior });
+  target.focus({ preventScroll: true });
+}
+
+weekList.addEventListener('click', (e) => {
+  const btn = e.target.closest('.week-day');
+  if (btn) jumpToDay(btn.dataset.date);
+});
+
+// Стрелки двигают фокус по дням, Tab выходит из недели (переходящий tabindex).
+weekList.addEventListener('keydown', (e) => {
+  const days = $$('.week-day', weekList);
+  const at = days.indexOf(document.activeElement);
+  if (at === -1) return;
+  let next = null;
+  if (e.key === 'ArrowRight') next = days[Math.min(at + 1, days.length - 1)];
+  else if (e.key === 'ArrowLeft') next = days[Math.max(at - 1, 0)];
+  else if (e.key === 'Home') next = days[0];
+  else if (e.key === 'End') next = days.at(-1);
+  if (!next) return;
+  e.preventDefault();
+  for (const day of days) day.tabIndex = day === next ? 0 : -1;
+  weekFocus = next.dataset.date;
+  next.focus();
+});
+
+// Пример из пустого состояния вписывается в поле: человек видит подсказки и сам жмёт Enter.
+function fillComposer(text) {
+  input.value = text;
+  clearInputError();
+  ignoreTokens = [];
+  updateChips();
+  input.focus();
+  input.setSelectionRange(text.length, text.length);
+}
+
+empty.addEventListener('click', (e) => {
+  const example = e.target.closest('[data-example]');
+  if (example) {
+    fillComposer(example.dataset.example);
+    return;
+  }
+  const act = e.target.closest('[data-act]')?.dataset.act;
+  if (act === 'focus-add') input.focus();
+  else if (act === 'clear-search') setQuery('', true);
+  else if (act === 'open-upcoming') location.hash = '#/upcoming';
+  else if (act === 'open-today') location.hash = '#/today';
+  else if (act === 'open-done') location.hash = '#/done';
+  else if (act === 'show-samples') {
+    const snapshot = todos;
+    commit([...sampleTodos(t, todayKey()), ...todos], { focus: viewTitle });
+    showToast(t('toast.samplesShown'), { snapshot, focus: viewTitle });
+  }
+});
+
 clearDoneBtn.addEventListener('click', () => {
   const snapshot = todos;
   const removed = todos.filter((todo) => todo.done).length;
@@ -1391,6 +1953,7 @@ function setQuery(value, focusSearch = false) {
   searchClear.hidden = !value;
   render();
   if (focusSearch) search.focus();
+  else if (pendingJump) runJump();
 }
 
 let searchTimer = 0;
@@ -1432,6 +1995,8 @@ window.addEventListener('hashchange', () => {
     searchClear.hidden = true;
   }
   render();
+  // пришли сюда кликом по дню недели: прокрутить к этому дню
+  if (pendingJump) runJump();
 });
 
 // Клик по уже открытому разделу во время поиска возвращает к разделу.
@@ -1597,7 +2162,7 @@ document.addEventListener('keydown', (e) => {
 
   const digit = /^Digit([1-4])$/.exec(e.code);
   if (digit && !e.shiftKey) {
-    location.hash = `#/${VIEWS[Number(digit[1]) - 1]}`;
+    location.hash = `#/${NAV[Number(digit[1]) - 1]}`;
     return;
   }
 
@@ -1661,13 +2226,23 @@ window.addEventListener('storage', (e) => {
   }
 });
 
-// Вкладку оставили открытой на ночь: «Сегодня» должно стать завтрашним днём.
-setInterval(() => {
-  if (todayKey() !== renderedDay && !editingId) {
-    setBrandDate();
-    render();
+// Вкладку оставили открытой на ночь или вернулись к ней вечером: «Сегодня»
+// становится завтрашним днём, меняются приветствие и вечерняя кнопка.
+function refreshDay() {
+  if (daySlot() === renderedSlot || editingId) return;
+  if (todayKey() !== renderedDay) {
+    planAgainOpen = false;
+    planExpanded = false;
   }
-}, 60_000);
+  setBrandDate();
+  quietly(() => render());
+}
+
+setInterval(refreshDay, 60_000);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') refreshDay();
+});
+window.addEventListener('focus', refreshDay);
 
 storageWarning.hidden = storageAvailable();
 $('#storage-corrupt').hidden = !loaded.corrupt;
@@ -1687,7 +2262,7 @@ $('#corrupt-download').addEventListener('click', () => {
 });
 applyTheme();
 applyLanguage();
-render();
+quietly(() => render());
 
 // На компьютере сразу можно печатать задачу; на телефоне клавиатуру сами не открываем.
 if (matchMedia('(hover: hover) and (pointer: fine)').matches && document.activeElement === document.body) input.focus();

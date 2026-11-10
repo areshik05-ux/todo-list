@@ -168,9 +168,9 @@ export function saveTodos(todos, storage) {
   }
 }
 
-/* Настройки: язык, тема, сортировка */
+/* Настройки: язык, тема, сортировка, свёрнутые предложения, день, когда оторвали листок */
 
-export const DEFAULT_SETTINGS = { lang: null, theme: 'light', sort: 'manual' };
+export const DEFAULT_SETTINGS = { lang: null, theme: 'light', sort: 'manual', planFolded: false, closedDay: null };
 
 export function parseSettings(raw) {
   try {
@@ -179,6 +179,8 @@ export function parseSettings(raw) {
       lang: ['ru', 'en'].includes(data.lang) ? data.lang : null,
       theme: ['light', 'dark'].includes(data.theme) ? data.theme : 'light',
       sort: ['manual', 'due', 'priority'].includes(data.sort) ? data.sort : 'manual',
+      planFolded: data.planFolded === true,
+      closedDay: isDateKey(data.closedDay) ? data.closedDay : null,
     };
   } catch {
     return { ...DEFAULT_SETTINGS };

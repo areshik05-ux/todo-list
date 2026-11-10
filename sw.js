@@ -1,12 +1,14 @@
 // Работа без интернета. Сначала сеть (чтобы после выкладки сразу видеть новую
 // версию), а если сети нет или она молчит дольше 3 секунд, то последняя
 // сохранённая копия. Задачи лежат в localStorage, им сеть не нужна вовсе.
-const CACHE = 'todo-v3-3';
+const CACHE = 'todo-v4-1';
 const NETWORK_WAIT_MS = 3000;
 const SHELL = [
-  './', 'index.html', 'css/style.css', 'favicon.svg', 'manifest.webmanifest', 'icons/icon-192.png',
+  './', 'index.html', 'css/theme.css', 'css/style.css', 'favicon.svg', 'manifest.webmanifest', 'icons/icon-192.png',
   'js/boot.js', 'js/app.js', 'js/todos.js', 'js/parse.js', 'js/dates.js', 'js/repeat.js',
-  'js/i18n.js', 'js/storage.js', 'js/samples.js',
+  'js/i18n.js', 'js/storage.js', 'js/samples.js', 'js/calendar.js', 'js/backup.js', 'js/install.js',
+  'fonts/onest-latin-wght.woff2', 'fonts/onest-cyrillic-wght.woff2',
+  'fonts/geologica-latin-wght.woff2', 'fonts/geologica-cyrillic-wght.woff2',
 ];
 
 self.addEventListener('install', (event) => {
