@@ -505,7 +505,7 @@ kbd {
     "content"
     "foot";
   align-content: start;
-  padding: 20px 16px 96px;
+  padding: 16px 16px 96px;
 }
 
 .main-title { grid-area: title; min-width: 0; }
@@ -515,6 +515,12 @@ kbd {
 .main-foot { grid-area: foot; }
 .day { grid-area: day; display: none; }
 
+/* Пока app.js не нарисовал раздел (медленная сеть), подвал не виден:
+   иначе он прыгал бы вниз, когда появится список. */
+[data-boot] .main:not(.is-ready) .main-foot {
+  visibility: hidden;
+}
+
 h1 {
   outline: none;
   font: 700 var(--fs-h2)/1.2 var(--font-display);
@@ -522,8 +528,7 @@ h1 {
   text-wrap: balance;
 }
 
-.view-sub,
-.day-status {
+.view-sub {
   margin-top: 4px;
   color: var(--text-2);
   font-size: var(--fs-small);
@@ -531,13 +536,24 @@ h1 {
   text-wrap: pretty;
 }
 
+/* строка дня: главная фраза экрана, размером как основной текст */
 .day-status {
   max-width: 60ch;
+  min-height: 24px;
+  margin-top: 6px;
   color: var(--text);
+  font-size: var(--fs-body);
+  line-height: 24px;
+  text-wrap: pretty;
 }
 
 .day-actions {
-  margin-top: 4px;
+  margin-top: 2px;
+}
+
+/* до загрузки скрипта строка дня есть только в «Сегодня» */
+[data-boot="other"] .main:not(.is-ready) .day-status {
+  display: none;
 }
 
 .main-tools {
@@ -547,34 +563,66 @@ h1 {
   margin-top: 16px;
 }
 
-/* Сегодня на узком экране: листок | приветствие и дата | кольцо, ниже строка дня и неделя */
-.main.is-today:not(.is-search) {
+/* Сегодня до 1100 px: листок | приветствие | кольцо в одну строку, ниже строка дня,
+   поле ввода и неделя. Порядок в разметке тот же, что и на экране (Tab идёт сверху вниз).
+   Пока app.js не загрузился, «Сегодня» раскладывается так же (boot.js ставит data-boot). */
+:is(.main.is-today:not(.is-search), [data-boot="today"] .main:not(.is-ready)) {
   grid-template-columns: auto minmax(0, 1fr) auto;
   grid-template-areas:
     "leaf title ring"
-    "leaf sub ring"
     "status status status"
     "actions actions actions"
-    "week week week"
     "tools tools tools"
     "compose compose compose"
+    "week week week"
     "content content content"
     "foot foot foot";
   column-gap: 12px;
 }
 
-.main.is-today:not(.is-search) .main-title,
-.main.is-today:not(.is-search) .day {
+:is(.main.is-today:not(.is-search), [data-boot="today"] .main:not(.is-ready)) :is(.main-title, .day) {
   display: contents;
 }
 
-.main.is-today:not(.is-search) h1 { grid-area: title; align-self: end; }
-.main.is-today:not(.is-search) .view-sub { grid-area: sub; align-self: start; }
-.main.is-today:not(.is-search) .day-status { grid-area: status; margin-top: 12px; }
-.main.is-today:not(.is-search) .day-actions { grid-area: actions; }
-.main.is-today:not(.is-search) .leaf { grid-area: leaf; }
-.main.is-today:not(.is-search) .ring-box { grid-area: ring; }
-.main.is-today:not(.is-search) .week { grid-area: week; margin-top: 12px; }
+:is(.main.is-today:not(.is-search), [data-boot="today"] .main:not(.is-ready)) h1 { grid-area: title; align-self: center; }
+/* дата есть на листке и в неделе: строкой её слышит только скринридер */
+:is(.main.is-today:not(.is-search), [data-boot="today"] .main:not(.is-ready)) .view-sub {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+:is(.main.is-today:not(.is-search), [data-boot="today"] .main:not(.is-ready)) .day-status { grid-area: status; margin-top: 12px; }
+:is(.main.is-today:not(.is-search), [data-boot="today"] .main:not(.is-ready)) .day-actions { grid-area: actions; }
+:is(.main.is-today:not(.is-search), [data-boot="today"] .main:not(.is-ready)) .leaf { grid-area: leaf; }
+:is(.main.is-today:not(.is-search), [data-boot="today"] .main:not(.is-ready)) .ring-box { grid-area: ring; }
+:is(.main.is-today:not(.is-search), [data-boot="today"] .main:not(.is-ready)) .week { grid-area: week; margin-top: 16px; }
+
+/* Телефон: поиск и порядок открываются кнопкой с лупой в верхней строке */
+@media (max-width: 639px) {
+  .main:not(.tools-open):not(.is-search) .main-tools {
+    display: none;
+  }
+
+  :is(.main.is-today:not(.is-search), [data-boot="today"] .main:not(.is-ready)) .day-status {
+    margin-top: 8px;
+  }
+
+  :is(.main.is-today:not(.is-search), [data-boot="today"] .main:not(.is-ready)) .week {
+    margin-top: 12px;
+  }
+
+  .main > .compose,
+  .main > .content {
+    margin-top: 16px;
+  }
+
+  .side {
+    row-gap: 8px;
+  }
+}
 
 @media (min-width: 640px) {
   .main { padding: 28px 24px 96px; }
@@ -593,13 +641,13 @@ h1 {
 
   .main-tools { margin-top: 0; align-self: start; }
 
-  /* в «Сегодня» до 1100 px поиск стоит под неделей, иначе приветствию мало места */
-  .main.is-today:not(.is-search) {
+  /* в «Сегодня» до 1100 px поиск стоит своей строкой, иначе приветствию мало места */
+  :is(.main.is-today:not(.is-search), [data-boot="today"] .main:not(.is-ready)) {
     grid-template-columns: auto minmax(0, 1fr) auto;
     column-gap: 16px;
   }
 
-  .main.is-today:not(.is-search) .main-tools { margin-top: 16px; }
+  :is(.main.is-today:not(.is-search), [data-boot="today"] .main:not(.is-ready)) .main-tools { margin-top: 16px; }
 }
 
 @media (min-width: 960px) {
@@ -614,7 +662,7 @@ h1 {
 /* Широкий экран: справа колонка дня (листок, кольцо, неделя) во всех разделах */
 @media (min-width: 1100px) {
   .main,
-  .main.is-today:not(.is-search) {
+  :is(.main.is-today:not(.is-search), [data-boot="today"] .main:not(.is-ready)) {
     max-width: 1120px;
     margin: 0;
     grid-template-columns: minmax(0, 1fr) 288px;
@@ -628,10 +676,10 @@ h1 {
 
   h1 { font-size: var(--fs-h1); letter-spacing: -0.02em; line-height: 1.15; }
 
-  .main.is-today:not(.is-search) .main-title { display: block; }
+  :is(.main.is-today:not(.is-search), [data-boot="today"] .main:not(.is-ready)) .main-title { display: block; }
 
   .day,
-  .main.is-today:not(.is-search) .day {
+  :is(.main.is-today:not(.is-search), [data-boot="today"] .main:not(.is-ready)) .day {
     grid-area: rail;
     display: grid;
     align-content: start;
@@ -641,16 +689,16 @@ h1 {
     margin-top: 24px;
   }
 
-  .main.is-today:not(.is-search) .day-status { margin-top: 6px; }
-  .main.is-today:not(.is-search) .main-tools { margin-top: 0; }
-  .main.is-today:not(.is-search) .day > * { grid-area: auto; margin-top: 0; }
+  :is(.main.is-today:not(.is-search), [data-boot="today"] .main:not(.is-ready)) .day-status { margin-top: 6px; }
+  :is(.main.is-today:not(.is-search), [data-boot="today"] .main:not(.is-ready)) .main-tools { margin-top: 0; }
+  :is(.main.is-today:not(.is-search), [data-boot="today"] .main:not(.is-ready)) .day > * { grid-area: auto; margin-top: 0; }
   .main-tools { width: 288px; }
   .main-tools .search { flex: 1; width: auto; }
 }
 
 @media (min-width: 1280px) {
   .main,
-  .main.is-today:not(.is-search) {
+  :is(.main.is-today:not(.is-search), [data-boot="today"] .main:not(.is-ready)) {
     grid-template-columns: minmax(0, 1fr) 320px;
     padding: 40px 48px 96px;
   }
@@ -969,6 +1017,18 @@ h1 {
 
 .hint.is-error {
   color: var(--danger);
+}
+
+/* текст подсказки ставит скрипт: на компьютере место под строку держим заранее */
+.hint:empty {
+  display: none;
+}
+
+@media (min-width: 640px) {
+  .hint:empty {
+    display: block;
+    min-height: 18px;
+  }
 }
 
 .warning {
@@ -2116,7 +2176,12 @@ button.meta-due[aria-expanded="true"] {
   left: calc(66.67% - 3px);
 }
 
+.leaf-month-of {
+  display: none;
+}
+
 .leaf-month {
+  min-height: 20px;
   margin-top: 16px;
   color: var(--text-2);
   font-size: var(--fs-small);
@@ -2125,6 +2190,7 @@ button.meta-due[aria-expanded="true"] {
 
 .leaf-num {
   position: relative;
+  min-height: 1em;
   margin-top: 2px;
   font: 750 var(--fs-leaf)/1 var(--font-display);
   letter-spacing: -0.03em;
@@ -2132,6 +2198,7 @@ button.meta-due[aria-expanded="true"] {
 }
 
 .leaf-wd {
+  min-height: 24px;
   margin-top: 6px;
   color: var(--text-2);
   font-size: var(--fs-body);
@@ -2253,6 +2320,7 @@ button.meta-due[aria-expanded="true"] {
 
 .ring-label {
   display: grid;
+  min-width: 64px;
 }
 
 .ring-count {
@@ -2288,6 +2356,7 @@ button.meta-due[aria-expanded="true"] {
 }
 
 .week-list {
+  min-height: 60px;
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 4px;
@@ -2361,18 +2430,13 @@ button.meta-due[aria-expanded="true"] {
   color: var(--blue-ink);
 }
 
-.week-note {
-  margin-top: 6px;
-  color: var(--text-3);
-  font-size: var(--fs-meta);
-}
 
 @media (max-width: 1099px) {
-  /* узкая шапка: листок 64 × 72, кольцо 44, неделя строкой под ними */
+  /* узкая шапка: листок 56 × 64 рядом с приветствием, кольцо 44 справа */
   .leaf {
-    width: 64px;
-    min-height: 72px;
-    padding: 0 0 6px;
+    width: 56px;
+    height: 64px;
+    padding: 0;
     border-radius: var(--r-md);
     align-self: center;
   }
@@ -2390,18 +2454,21 @@ button.meta-due[aria-expanded="true"] {
   .leaf-band::after { left: calc(66.67% - 2px); }
 
   .leaf-num {
-    order: 2;
-    margin-top: 6px;
-    font-size: var(--fs-leaf-m);
+    margin-top: 5px;
+    min-height: 0;
+    font-size: 30px;
   }
 
-  .leaf-month {
-    order: 3;
+  /* под числом месяц в родительном: «11 ноября» */
+  .leaf-month-of {
+    display: block;
     margin-top: 2px;
-    font-size: 12px;
-    line-height: 16px;
+    color: var(--text-2);
+    font-size: 11px;
+    line-height: 14px;
   }
 
+  .leaf-month,
   .leaf-wd,
   .leaf.is-closed .leaf-closed { display: none; }
 
@@ -2420,6 +2487,9 @@ button.meta-due[aria-expanded="true"] {
   }
 
   .week { max-width: 480px; }
+
+  .week-day { min-height: 48px; padding: 4px 0; }
+  .week-list { min-height: 56px; }
 }
 
 @media (max-width: 639px) {
@@ -2434,22 +2504,23 @@ button.meta-due[aria-expanded="true"] {
   .ring-box.is-free .ring-word { display: block; max-width: 72px; text-align: right; font-size: var(--fs-meta); line-height: 16px; }
 
   .ring-count {
+    min-height: 16px;
     font-size: var(--fs-meta);
     line-height: 16px;
   }
 }
 
-@media (pointer: coarse) {
+@media (pointer: coarse) and (min-width: 1100px) {
   .week-day { min-height: 60px; }
 }
 
 /* «Можно взять на сегодня»: лоток предложений, одна кнопка на строку */
 
-.plan-zone:has(> :not([hidden])) {
+.plan-zone.is-shown {
   margin-bottom: 24px;
 }
 
-.list-wrap + .plan-zone:has(> :not([hidden])) {
+.list-wrap + .plan-zone.is-shown {
   margin-top: 28px;
   margin-bottom: 0;
 }
@@ -2599,7 +2670,7 @@ button.meta-due[aria-expanded="true"] {
 }
 
 .list-wrap:not(:empty) ~ .empty,
-.plan-zone:has(> :not([hidden])) + .empty {
+.plan-zone.is-shown + .empty {
   margin-top: 32px;
 }
 
@@ -2672,50 +2743,6 @@ button.meta-due[aria-expanded="true"] {
 @media (pointer: coarse) {
   .example { min-height: 44px; }
 }
-
-.ghosts {
-  display: grid;
-  gap: 2px;
-  width: 100%;
-  margin-top: 12px;
-}
-
-.ghost {
-  display: grid;
-  grid-template-columns: 20px minmax(0, 1fr);
-  align-items: center;
-  gap: 14px;
-  min-height: 48px;
-  padding: 0 12px;
-}
-
-.ghost-dot {
-  width: 20px;
-  height: 20px;
-  border: 1.5px dashed var(--line-strong);
-  border-radius: 50%;
-}
-
-.ghost-bars {
-  display: grid;
-  gap: 6px;
-}
-
-.ghost-bar {
-  width: 60%;
-  height: 8px;
-  border-radius: 4px;
-  background: var(--hover);
-}
-
-.ghost-bar + .ghost-bar {
-  width: 36%;
-  height: 6px;
-}
-
-.ghost:nth-child(2) .ghost-bar:first-child { width: 48%; }
-.ghost:nth-child(3) .ghost-bar:first-child { width: 70%; }
-.ghost:nth-child(3) .ghost-bar + .ghost-bar { width: 24%; }
 
 /* Команды (Ctrl+K): окно сверху, поле без рамки, список вариантов по группам */
 
@@ -2831,6 +2858,108 @@ button.meta-due[aria-expanded="true"] {
     width: calc(100% - 32px);
     margin-top: 16px;
   }
+}
+
+/* Телефон: верхняя строка с лупой, подсказка под полем только при вводе */
+
+.search-toggle {
+  display: none;
+}
+
+@media (max-width: 639px) {
+  .search-toggle {
+    display: inline-grid;
+  }
+
+  /* название приложения остаётся для скринридера, место отдано кнопкам */
+  .brand-name {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .views {
+    padding-bottom: 6px;
+  }
+
+  .view {
+    height: 44px;
+  }
+
+  /* когда задачи уже есть, подсказка про быстрый ввод видна, пока человек пишет */
+  .main.has-tasks .compose:not(:focus-within) .hint:not(.is-error) {
+    display: none;
+  }
+}
+
+@media (max-width: 359px) {
+  /* самый узкий экран: одна кнопка второго языка вместо пары */
+  .lang {
+    margin-right: 0;
+    padding: 0;
+    background: none;
+  }
+
+  .lang button[aria-pressed="true"] {
+    display: none;
+  }
+
+  .composer input { padding-left: 36px; }
+  .composer-icon { left: 11px; }
+  .composer .btn-primary { padding: 0 12px; }
+}
+
+@media (pointer: coarse) and (max-width: 360px) {
+  /* ручку перетаскивания на самом узком телефоне прячем: название получает место */
+  .handle { display: none; }
+  .todo { padding-left: 6px; }
+}
+
+/* Сделанная задача тихая: розовый у неё только кружок, флажок P1 серый */
+.todo.is-done .meta-priority {
+  color: var(--text-3);
+}
+
+/* Режим высокой контрастности Windows: рамки и выделения системными цветами */
+@media (forced-colors: active) {
+  .btn-primary,
+  .btn-secondary,
+  .plan-take,
+  .example,
+  .chip,
+  .samples-bar {
+    border: 1px solid ButtonText;
+  }
+
+  .view[aria-current="page"],
+  .week-day[aria-current="date"],
+  .palette-option[aria-selected="true"] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+
+  /* переплёт листка рамкой сверху: цветной полосы в этом режиме нет */
+  .leaf {
+    border: 1px solid CanvasText;
+    border-top-width: 6px;
+  }
+
+  .leaf-band {
+    visibility: hidden;
+  }
+
+  .ring-track { stroke: GrayText; }
+  .ring-arc { stroke: Highlight; }
+  .week-dot { background: CanvasText; forced-color-adjust: none; }
+
+  .check-box::before {
+    forced-color-adjust: none;
+    background: Highlight;
+  }
+
+  .check-in { color: HighlightText; }
 }
 
 /* Без анимации: первая отрисовка, «Вернуть» и смена дня проходят тихо */
