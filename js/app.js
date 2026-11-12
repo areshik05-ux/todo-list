@@ -106,7 +106,25 @@ let weekFocus = null; // день недели, который получает 
 // день, время суток и вечер, для которых нарисована шапка
 let renderedSlot = '';
 let persistAsked = false; // просьба хранить данные постоянно: один раз, после своей задачи
-let restMovedDay = null; // вечером «перенести оставшиеся»: в этот день предложения свёрнуты
+// вечером «перенести оставшиеся»: в этот день предложения свёрнуты, и после перезагрузки тоже
+const REST_MOVED_KEY = 'todo-list:rest-moved';
+function readRestMoved() {
+  try {
+    return globalThis.localStorage.getItem(REST_MOVED_KEY);
+  } catch {
+    return null;
+  }
+}
+function setRestMoved(day) {
+  restMovedDay = day;
+  try {
+    if (day) globalThis.localStorage.setItem(REST_MOVED_KEY, day);
+    else globalThis.localStorage.removeItem(REST_MOVED_KEY);
+  } catch {
+    // хранилище недоступно: помним до перезагрузки
+  }
+}
+let restMovedDay = readRestMoved();
 let lastDay = null; // итог дня с последней отрисовки: не считать его заново при отметке
 
 /* Состояние */
@@ -557,7 +575,7 @@ function render(focus = currentFocus()) {
   const d = dayInfo(today);
   lastDay = { today, closed: d.closed };
   // на сегодня снова что-то есть: вечерний перенос больше не сворачивает предложения
-  if (d.total) restMovedDay = null;
+  if (d.total && restMovedDay) setRestMoved(null);
   const { counts } = d;
 
   for (const link of $$('[data-view]')) {
@@ -1184,7 +1202,7 @@ input.addEventListener('keydown', (e) => {
     openHelp();
   } else if (e.key === '/') {
     e.preventDefault();
-    search.focus();
+    openSearch();
   }
 });
 
@@ -1903,7 +1921,7 @@ $('#move-rest').addEventListener('click', () => {
   if (!n) return;
   const snapshot = todos;
   // остальное ушло на завтра: сегодня больше не предлагаем те же задачи обратно
-  restMovedDay = today;
+  setRestMoved(today);
   planAgainOpen = false;
   // на телефоне поле в фокусе открыло бы клавиатуру: фокус на заголовок
   commit(moveOpenTo(todos, today, addDays(today, 1)), { focus: finePointer() ? 'input' : viewTitle });
@@ -2020,12 +2038,32 @@ search.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   e.preventDefault();
   if (search.value) setQuery('');
-  else search.blur();
+  else closeSearchTools();
 });
 
 searchClear.addEventListener('click', () => setQuery('', true));
 
-// Телефон: поиск и порядок спрятаны за лупой в верхней строке, чтобы список был ближе
+// Телефон и узкое окно: поиск и порядок спрятаны за лупой в верхней строке, чтобы список был ближе.
+// Клавиша «/» сначала открывает их, иначе фокус ушёл бы в скрытое поле.
+function openSearch() {
+  main.classList.add('tools-open');
+  searchToggle.setAttribute('aria-expanded', 'true');
+  search.focus();
+  search.select();
+}
+
+// Esc в пустом поиске: на узком экране прячем панель и возвращаем фокус на лупу
+function closeSearchTools() {
+  const narrow = searchToggle.offsetParent !== null;
+  if (narrow && main.classList.contains('tools-open') && !query) {
+    main.classList.remove('tools-open');
+    searchToggle.setAttribute('aria-expanded', 'false');
+    searchToggle.focus();
+  } else {
+    search.blur();
+  }
+}
+
 searchToggle.addEventListener('click', () => {
   const open = !main.classList.contains('tools-open');
   main.classList.toggle('tools-open', open);
@@ -2436,8 +2474,7 @@ document.addEventListener('keydown', (e) => {
 
   if (e.key === '/' || e.code === 'Slash') {
     e.preventDefault();
-    search.focus();
-    search.select();
+    openSearch();
     return;
   }
 
