@@ -46,6 +46,20 @@
     var raw = localStorage.getItem('todo-list:v2');
     var stored = raw === null ? null : JSON.parse(raw);
     if (stored && stored.todos && stored.todos.length === 0) root.dataset.empty = '';
+    // вечер (с 18:00, как EVENING_HOUR в app.js) и на сегодня есть открытые задачи:
+    // строка «Перенести оставшиеся на завтра» появится, место под неё держим сразу
+    var now = new Date();
+    // первый визит: примеры задач (samples.js) включают задачи на сегодня
+    var first = raw === null && localStorage.getItem('todo-list:v1') === null;
+    if (now.getHours() >= 18 && first) root.dataset.evening = '';
+    if (now.getHours() >= 18 && stored && stored.todos && stored.todos.length) {
+      var p2 = function (n) { return (n < 10 ? '0' : '') + n; };
+      var today = now.getFullYear() + '-' + p2(now.getMonth() + 1) + '-' + p2(now.getDate());
+      for (var k = 0; k < stored.todos.length; k += 1) {
+        var item = stored.todos[k];
+        if (item && !item.done && typeof item.due === 'string' && item.due <= today) { root.dataset.evening = ''; break; }
+      }
+    }
   } catch (e) {
     // испорченные данные разберёт app.js
   }

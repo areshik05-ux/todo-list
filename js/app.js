@@ -1213,6 +1213,14 @@ chips.addEventListener('click', (e) => {
   input.focus();
 });
 
+// Вставили больше, чем помещается в поле: браузер молча отрежет конец, а там часто срок и метки
+input.addEventListener('paste', (e) => {
+  const pasted = e.clipboardData?.getData('text') ?? '';
+  const kept = input.value.length - (input.selectionEnd - input.selectionStart);
+  const total = kept + pasted.length;
+  if (total > input.maxLength) showToast(t('add.pasteCut', { n: input.maxLength, total }));
+});
+
 form.addEventListener('submit', (e) => {
   e.preventDefault();
   const parsed = currentParse();
@@ -1413,12 +1421,15 @@ function placeMenu() {
   if (!menu) return;
   const r = menu.opener.getBoundingClientRect();
   const w = rowMenu.offsetWidth;
-  const h = rowMenu.offsetHeight;
+  // высота меню не больше экрана (CSS max-height), остальное прокручивается внутри
+  const h = Math.min(rowMenu.offsetHeight, innerHeight - 16);
   // от срока меню открывается вправо, от кнопки «ещё» влево
   const anchor = menu.opener.matches('.meta-due') ? r.left - 6 : r.right - w;
   const left = Math.max(8, Math.min(anchor, innerWidth - w - 8));
   const below = r.bottom + 4 + h <= innerHeight - 8;
-  const top = below ? r.bottom + 4 : Math.max(8, r.top - h - 4);
+  // не влезает ни снизу, ни сверху (телефон боком): прижимаем к краю экрана,
+  // высота ограничена в CSS, остальное прокручивается внутри меню
+  const top = below ? r.bottom + 4 : Math.max(8, Math.min(r.top - h - 4, innerHeight - 8 - h));
   rowMenu.style.left = `${left}px`;
   rowMenu.style.top = `${top}px`;
 }
@@ -1529,7 +1540,11 @@ function leave(id) {
   const index = row ? $$('.todo', listWrap).indexOf(row) : 0;
   const finish = () => {
     lingering.delete(id);
-    if (editingId) return;
+    // открыт редактор: список не трогаем, но строка дня (её придержали на время паузы) обновляется
+    if (editingId) {
+      if (view === 'today' && !query && !lingering.size) dayStatusEl.textContent = statusText(dayInfo(todayKey()));
+      return;
+    }
     render(hadFocus ? { id: '', index } : undefined);
   };
   if (!row || editingId || reducedMotion()) return finish();
@@ -1863,8 +1878,7 @@ function showToast(message, { snapshot = null, focus = null, action = null, say 
   // а под последней ссылкой страницы есть куда прокрутить
   const room = toast.offsetHeight + 24;
   document.documentElement.style.setProperty('scroll-padding-bottom', `${room}px`);
-  main.style.removeProperty('padding-bottom');
-  if (parseFloat(getComputedStyle(main).paddingBottom) < room) main.style.setProperty('padding-bottom', `${room}px`);
+  holdToastRoom(room);
   announce(say);
   undo = { snapshot, focus, action, timer: setTimeout(dropUndo, TOAST_MS) };
 }
@@ -1878,7 +1892,37 @@ function dropUndo() {
   if (toast.contains(document.activeElement)) restoreFocus(focus ?? (finePointer() ? 'input' : viewTitle));
   toast.hidden = true;
   document.documentElement.style.removeProperty('scroll-padding-bottom');
+  releaseToastRoom();
+}
+
+// Место под страницей на время сообщения: последняя ссылка не прячется под ним.
+// Убираем его, только когда добавка целиком ниже экрана: иначе браузер подтянул бы
+// прокрутку и подвал прыгнул бы вниз.
+let toastBase = 0; // нижний отступ .main из CSS
+let toastExtra = 0; // сколько добавлено сверх него
+function holdToastRoom(room) {
+  window.removeEventListener('scroll', releaseWhenHidden);
+  if (!main.style.paddingBottom) toastBase = parseFloat(getComputedStyle(main).paddingBottom) || 0;
+  const need = Math.max(room, toastBase + toastExtra);
+  toastExtra = Math.max(0, need - toastBase);
+  if (toastExtra) main.style.setProperty('padding-bottom', `${toastBase + toastExtra}px`);
+}
+
+function extraOffScreen() {
+  return document.documentElement.scrollHeight - (scrollY + innerHeight) >= toastExtra - 1;
+}
+
+function releaseWhenHidden() {
+  if (!extraOffScreen()) return;
+  window.removeEventListener('scroll', releaseWhenHidden);
   main.style.removeProperty('padding-bottom');
+  toastExtra = 0;
+}
+
+function releaseToastRoom() {
+  if (!toastExtra) return;
+  if (extraOffScreen()) releaseWhenHidden();
+  else window.addEventListener('scroll', releaseWhenHidden, { passive: true });
 }
 
 function applyUndo() {
@@ -2091,14 +2135,20 @@ search.addEventListener('keydown', (e) => {
 });
 
 // × и «Убрать фильтр»: мышь остаётся в поле поиска, на телефоне фокус на заголовке,
-// иначе поле в фокусе открыло бы клавиатуру поверх списка
-function clearSearch() {
-  if (finePointer()) return setQuery('', true);
+// иначе поле в фокусе открыло бы клавиатуру поверх списка. Если человек печатал
+// запрос и нажал ×, он продолжает печатать: клавиатура и так открыта.
+function clearSearch(keepTyping = false) {
+  if (finePointer() || keepTyping) return setQuery('', true);
   setQuery('');
   return viewTitle.focus({ preventScroll: true });
 }
 
-searchClear.addEventListener('click', clearSearch);
+let typingSearch = false;
+searchClear.addEventListener('pointerdown', () => { typingSearch = document.activeElement === search; });
+searchClear.addEventListener('click', () => {
+  clearSearch(typingSearch);
+  typingSearch = false;
+});
 
 // Телефон и узкое окно: поиск и порядок спрятаны за лупой в верхней строке, чтобы список был ближе.
 // Клавиша «/» сначала открывает их, иначе фокус ушёл бы в скрытое поле.

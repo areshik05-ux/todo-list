@@ -551,6 +551,18 @@ h1 {
   margin-top: 2px;
 }
 
+/* вечером строка переноса появится после загрузки app.js: место под неё уже есть (CLS) */
+[data-boot="today"][data-evening] .main:not(.is-ready) .day-actions[hidden] {
+  display: block !important;
+  visibility: hidden;
+}
+
+/* «Сегодня» на компьютере: строка дня держит две строки, чтобы список не прыгал,
+   когда после отметки в ней появляется или пропадает вторая строка */
+@media (min-width: 640px) {
+  :is(.main.is-today, [data-boot="today"] .main:not(.is-ready)) .day-status { min-height: 48px; }
+}
+
 /* до загрузки скрипта строка дня есть только в «Сегодня» */
 [data-boot="other"] .main:not(.is-ready) .day-status {
   display: none;
@@ -1751,6 +1763,11 @@ button.meta-due[aria-expanded="true"] {
   background: var(--raised);
   box-shadow: var(--shadow-overlay);
   animation: menu-in 160ms var(--ease-out);
+  /* телефон боком: меню выше экрана прокручивается внутри, «Удалить» всегда достижимо */
+  max-height: calc(100vh - 16px);
+  max-height: calc(100dvh - 16px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 @keyframes menu-in {
@@ -2678,6 +2695,16 @@ button.meta-due[aria-expanded="true"] {
     flex-direction: column;
     align-items: stretch;
     gap: 0;
+  }
+
+  /* название в две строки, а не «Записаться к в…» рядом с кнопкой */
+  .plan-name {
+    display: -webkit-box;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
   }
 }
 
