@@ -1,7 +1,7 @@
 // Работа без интернета. Сначала сеть (чтобы после выкладки сразу видеть новую
 // версию), а если сети нет или она молчит дольше 3 секунд, то последняя
 // сохранённая копия. Задачи лежат в localStorage, им сеть не нужна вовсе.
-const CACHE = 'todo-v4-5';
+const CACHE = 'todo-v4-6';
 const NETWORK_WAIT_MS = 3000;
 const SHELL = [
   './', 'index.html', 'css/theme.css', 'css/style.css', 'favicon.svg', 'manifest.webmanifest', 'icons/icon-192.png',

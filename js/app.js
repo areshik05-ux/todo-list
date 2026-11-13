@@ -92,6 +92,7 @@ let view = viewFromHash();
 let query = '';
 let editingId = null;
 let ignoreTokens = [];
+let hintNote = null; // () => сообщение под полем вместо подсказки, пока человек не продолжит печатать
 let lastChips = '';
 let undo = null; // { snapshot, timer }
 let dragEnabled = false;
@@ -595,10 +596,7 @@ function render(focus = currentFocus()) {
   renderWeek(d, today);
   renderPlan(d, today);
 
-  const defaultHint = view === 'today' ? t('add.hintToday') : view === 'upcoming' ? t('add.hintUpcoming') : '';
-  // сообщение «Сначала напишите задачу» держится, пока человек не начнёт печатать
-  if (hint.classList.contains('is-error')) hint.textContent = `${t('add.empty')}.`;
-  else hint.textContent = defaultHint ? `${t('add.hint')}. ${defaultHint}.` : `${t('add.hint')}.`;
+  renderHint();
 
   dragEnabled = !query && settings.sort === 'manual' && (view === 'all' || view === 'today');
   listWrap.classList.toggle('no-drag', !dragEnabled);
@@ -1179,6 +1177,21 @@ function updateChips() {
   }));
 }
 
+function renderHint() {
+  const defaultHint = view === 'today' ? t('add.hintToday') : view === 'upcoming' ? t('add.hintUpcoming') : '';
+  // сообщение «Сначала напишите задачу» держится, пока человек не начнёт печатать
+  if (hint.classList.contains('is-error')) hint.textContent = `${t('add.empty')}.`;
+  else if (hintNote) hint.textContent = hintNote();
+  else hint.textContent = defaultHint ? `${t('add.hint')}. ${defaultHint}.` : `${t('add.hint')}.`;
+  hint.classList.toggle('is-note', Boolean(hintNote) && !hint.classList.contains('is-error'));
+}
+
+function clearHintNote() {
+  if (!hintNote) return;
+  hintNote = null;
+  renderHint();
+}
+
 function clearInputError() {
   if (!hint.classList.contains('is-error')) return;
   input.removeAttribute('aria-invalid');
@@ -1201,6 +1214,7 @@ input.addEventListener('keydown', (e) => {
 
 input.addEventListener('input', () => {
   clearInputError();
+  clearHintNote();
   if (!input.value.trim()) ignoreTokens = [];
   updateChips();
 });
@@ -1213,12 +1227,20 @@ chips.addEventListener('click', (e) => {
   input.focus();
 });
 
-// Вставили больше, чем помещается в поле: браузер молча отрежет конец, а там часто срок и метки
+// Вставили больше, чем помещается в поле: браузер молча отрежет конец, а там часто срок и метки.
+// Перевод строки в однострочном поле становится одним знаком, «\r\n» из Windows тоже.
+// Сообщение пишем под полем, а не всплывающим: «Вернуть» от прошлого действия не пропадает.
 input.addEventListener('paste', (e) => {
-  const pasted = e.clipboardData?.getData('text') ?? '';
-  const kept = input.value.length - (input.selectionEnd - input.selectionStart);
-  const total = kept + pasted.length;
-  if (total > input.maxLength) showToast(t('add.pasteCut', { n: input.maxLength, total }));
+  const pasted = (e.clipboardData?.getData('text') ?? '').replace(/\r\n?|\n/g, ' ');
+  const room = Math.max(0, input.maxLength - (input.value.length - (input.selectionEnd - input.selectionStart)));
+  if (pasted.length <= room) return;
+  const note = () => t('add.pasteCut', { n: room, total: pasted.length });
+  // после события input от самой вставки, иначе оно сразу вернёт обычную подсказку
+  setTimeout(() => {
+    hintNote = note;
+    renderHint();
+  }, 0);
+  announce(note());
 });
 
 form.addEventListener('submit', (e) => {
@@ -1244,6 +1266,7 @@ form.addEventListener('submit', (e) => {
   searchClear.hidden = true;
   form.reset();
   ignoreTokens = [];
+  hintNote = null;
   // длиннее 200 символов: продолжение уходит в заметку, а не пропадает молча
   const { title, rest } = splitLongTitle(parsed.title);
   const next = addTodo(todos, { ...parsed, title, notes: rest });
@@ -1908,8 +1931,11 @@ function holdToastRoom(room) {
   if (toastExtra) main.style.setProperty('padding-bottom', `${toastBase + toastExtra}px`);
 }
 
+// Добавку можно убрать без скачка, если прокрутка в неё не заходит. Страница, которая
+// и без добавки помещается на экран, отпускает её, как только прокручена к началу.
 function extraOffScreen() {
-  return document.documentElement.scrollHeight - (scrollY + innerHeight) >= toastExtra - 1;
+  const maxWithout = document.documentElement.scrollHeight - toastExtra - innerHeight;
+  return scrollY <= Math.max(0, maxWithout) + 1;
 }
 
 function releaseWhenHidden() {
@@ -2072,6 +2098,7 @@ weekList.addEventListener('keydown', (e) => {
 function fillComposer(text) {
   input.value = text;
   clearInputError();
+  clearHintNote();
   ignoreTokens = [];
   updateChips();
   input.focus();

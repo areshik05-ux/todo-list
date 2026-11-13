@@ -53,9 +53,40 @@ const YEAR_G = '(?: ?(?:г\\.?|года|году)(?![\\p{L}\\p{N}_.]))?';
 // взялась бы из хвоста, а при неудаче дальше регулярка отступила бы с «25.11.2027»
 // на «25.11» и потеряла год.
 const NUM_DATE = `(?<!\\d[./])(\\d{1,2})[./](\\d{2})(?:[./](\\d{4}|\\d{2})${YEAR_G})?(?![./]?\\d)`;
-const END_DATE = '\\d{1,2}[./]\\d{2}(?:[./](?:\\d{4}|\\d{2}))?(?![./]?\\d)';
+const END_DATE = '(\\d{1,2})[./](\\d{2})(?:[./](\\d{4}|\\d{2}))?(?![./]?\\d)';
 // «26» в «25.11.26» это 2026 год
 const yearOf = (y) => (y ? (y.length === 2 ? 2000 + Number(y) : Number(y)) : undefined);
+const thisYear = (today) => Number(today.slice(0, 4));
+
+// Дата из цифр. Короткий год берём, только если дата ещё впереди и не дальше чем через
+// 10 лет: «Обновить до 2.12.21», «Версия 10.10.10», «Release 1.10.25» это номера версий,
+// а не сроки в прошлом. Полный год («до 01.12.2025») берём как написан.
+function numericDate(today, day, month, year) {
+  const key = dayMonthKey(today, Number(day), Number(month), yearOf(year));
+  if (!key || year?.length !== 2) return key;
+  return key >= today && Number(key.slice(0, 4)) <= thisYear(today) + 10 ? key : null;
+}
+
+// «Акция с 10.11 по 20.11»: если диапазон уже идёт, срок по его концу, а не начало
+// через год. Иначе срок по началу, как у одиночной даты. Без года диапазон мог начаться
+// и в прошлом году: «с 25.12 по 05.01» второго января идёт до 5 января.
+function rangeDue(today, d1, m1, y1, d2, m2, y2) {
+  // год только у конца («с 25.12 по 05.01.2027»): начало в том же году или в предыдущем
+  const endFirst = Number(m1) * 100 + Number(d1) > Number(m2) * 100 + Number(d2);
+  const startYear = !y1 && y2 ? yearOf(y2) - (endFirst ? 1 : 0) : undefined;
+  const years = y1 ? [yearOf(y1)] : startYear ? [startYear] : [thisYear(today) - 1, thisYear(today)];
+  for (const year of years) {
+    const start = dayMonthKey(today, Number(d1), Number(m1), year);
+    if (!start || start >= today) continue;
+    let end = dayMonthKey(today, Number(d2), Number(m2), y2 ? yearOf(y2) : year);
+    if (end && !y2 && end < start) end = dayMonthKey(today, Number(d2), Number(m2), year + 1);
+    if (end && end >= today) return end;
+  }
+  return startYear ? dayMonthKey(today, Number(d1), Number(m1), startYear) : numericDate(today, d1, m1, y1);
+}
+const rangeDate = (m, today) => rangeDue(today, m[1], m[2], m[3], m[4], m[5], m[6]);
+// «с 25 декабря по 5 января», «с 25 по 31 декабря»: без первого месяца он тот же, что у второго
+const rangeWordDate = (m, today) => rangeDue(today, m[1], monthIndex(m[2] ?? m[5]), m[3], m[4], monthIndex(m[5]), m[6]);
 // «2.10 г. соли», «1.05 м. кабеля», «1.10 ч.1»: с точкой это тоже единица, если число
 // похоже на дробь (день до 12 без нуля впереди) и дальше не название с заглавной.
 // «25.11 г. Москва», «05.12 м. Пушкинская», «2.10 г. Москва» остаются датами.
@@ -65,6 +96,9 @@ const looksLikeMeasure = (m) => !m[3] && Number(m[1]) <= 12 && !m[1].startsWith(
 // «2.10 кг», «1.25 л», «3.50 $»: после числа единица, значит это не дата.
 // «г.», «м.», «ч.» с точкой это «год», «метро», «час»: «25.11 г. Москва» остаётся датой
 const NOT_UNIT = '(?!\\s?(?:кг|гр|г(?!\\.)|мг|л|мл|м(?!\\.)|см|мм|км|шт|руб|р|коп|ч(?!\\.)|мин|сек|kg|g|mg|lbs?|oz|l|ml|m|cm|mm|km|pcs|h|min|sec|%|\\$|€|₽)(?![\\p{L}\\p{N}_]))';
+// «среда» ещё и окружение: «влияние на среду обитания», «в среду разработки» не срок.
+// Отсекаем только эти слова после «среду», «на пятницу в 10:00» остаётся сроком.
+const NOT_ENVIRONMENT = '(?!\\s+(?:обитания|окружения|разработки|исполнения|выполнения|обучения|тестирования|программирования|проживания|общения|сборки|запуска)(?![\\p{L}\\p{N}_]))';
 // предлог перед сроком уходит вместе с ним: «к 25.11», «до завтра», «на пятницу», «on friday».
 // «Договор от 01.12.2026» не срок, а дата документа: после «от» дату не берём.
 const PRE = '(?<!(?:^|[^\\p{L}\\p{N}_])от )(?:on |by |к |до |на )?';
@@ -83,17 +117,17 @@ const DATE_RULES = [
   ...WEEKDAYS.map(([day, ru, dative, genitive, short, en]) => [
     // по-русски только с предлогом: «в среду» срок, а «настроить среду» нет;
     // английское сокращение только с on/next: «mon» само по себе не день
-    // «на пятницу» только в конце или перед меткой и знаком: «влияние на среду обитания» не срок
-    re(`(?:в|во) (?:${ru}|${short})|на (?:${ru}|${short})(?=\\s*(?:$|[.,;:!?#]))|к ${dative}|до ${genitive}|(?:on |next |by )?(?:${en.split('|')[0]})|(?:on |next )${en.split('|')[1]}`),
+    re(`(?:в|во|на) (?:${ru}|${short})${day === 3 ? NOT_ENVIRONMENT : ''}|к ${dative}|до ${genitive}|(?:on |next |by )?(?:${en.split('|')[0]})|(?:on |next )${en.split('|')[1]}`),
     (_, t) => nextWeekday(t, day),
   ]),
-  // «Отпуск с 25.12 по 05.01», «Курс от 01.12 по 05.12»: срок по первой дате,
-  // а сам диапазон остаётся в названии
-  [re(`(?:с|от|from) ${NUM_DATE} (?:по|до|to|till|until) ${END_DATE}${NOT_UNIT}`),
-    (m, t) => dayMonthKey(t, Number(m[1]), Number(m[2]), yearOf(m[3])), { keep: true }],
+  // «Отпуск с 25.12 по 05.01», «Курс от 01.12 по 05.12»: срок по первой дате
+  // (или по последней, если диапазон уже идёт), а сам диапазон остаётся в названии
+  [re(`(?:с|от|from) ${NUM_DATE} (?:по|до|to|till|until) ${END_DATE}${NOT_UNIT}`), rangeDate, { keep: true }],
+  [re(`(?:с|от|from) (\\d{1,2})(?: (${MONTH_RU}|${MONTH_EN})(?: (\\d{4})${YEAR_G})?)? (?:по|до|to|till|until) (\\d{1,2}) (${MONTH_RU}|${MONTH_EN})(?: (\\d{4})${YEAR_G})?`),
+    rangeWordDate, { keep: true }],
   // «on» перед датой тоже срезаем: «pay rent on 25.11» → «pay rent».
   [re(`${PRE}${NUM_DATE}${NOT_UNIT}`),
-    (m, t) => (looksLikeMeasure(m) ? null : dayMonthKey(t, Number(m[1]), Number(m[2]), yearOf(m[3])))],
+    (m, t) => (looksLikeMeasure(m) ? null : numericDate(t, m[1], m[2], m[3]))],
   // 25 ноября, 25 nov, 25 november 2026
   [re(`${PRE}(\\d{1,2}) (${MONTH_RU}|${MONTH_EN})(?: (\\d{4})${YEAR_G})?`),
     (m, t) => dayMonthKey(t, Number(m[1]), monthIndex(m[2]), m[3] ? Number(m[3]) : undefined)],

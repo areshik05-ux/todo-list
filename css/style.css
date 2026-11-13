@@ -557,12 +557,6 @@ h1 {
   visibility: hidden;
 }
 
-/* «Сегодня» на компьютере: строка дня держит две строки, чтобы список не прыгал,
-   когда после отметки в ней появляется или пропадает вторая строка */
-@media (min-width: 640px) {
-  :is(.main.is-today, [data-boot="today"] .main:not(.is-ready)) .day-status { min-height: 48px; }
-}
-
 /* до загрузки скрипта строка дня есть только в «Сегодня» */
 [data-boot="other"] .main:not(.is-ready) .day-status {
   display: none;
@@ -1029,6 +1023,11 @@ h1 {
 
 .hint.is-error {
   color: var(--danger);
+}
+
+/* «Вставлено 1500 символов из 1600»: заметнее обычной подсказки, но не ошибка */
+.hint.is-note {
+  color: var(--text-2);
 }
 
 /* текст подсказки ставит скрипт: на компьютере место под строку держим заранее */
@@ -2689,8 +2688,8 @@ button.meta-due[aria-expanded="true"] {
   .plan-take { height: 44px; }
 }
 
-@media (max-width: 399px) {
-  /* на узком экране срок под названием */
+/* на телефоне (и 412, и 430 px) срок под названием, а название в две строки */
+@media (max-width: 639px) {
   .plan-text {
     flex-direction: column;
     align-items: stretch;
