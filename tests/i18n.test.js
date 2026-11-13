@@ -64,3 +64,11 @@ test('короткие русские слова не висят в конце �
   // примеры попадают в поле ввода как есть
   assert.equal(ru.t('sample.bank'), 'Позвонить в банк');
 });
+
+test('месяц под числом листка: по-русски в родительном, по-английски коротко', () => {
+  const months = (i) => Array.from({ length: 12 }, (_, m) => i.leafParts(new Date(2026, m, 13)).monthOf);
+  assert.equal(months(ru)[10], 'ноября');
+  assert.equal(months(ru)[8], 'сентября');
+  for (const m of months(en)) assert.ok(m.length <= 4 && !m.endsWith('.'), m);
+  assert.equal(en.leafParts(new Date(2026, 10, 13)).month, 'November');
+});

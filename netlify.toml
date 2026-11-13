@@ -16,6 +16,8 @@
     Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
     Cross-Origin-Opener-Policy = "same-origin"
     Cross-Origin-Resource-Policy = "same-origin"
+    # на *.netlify.app Netlify ставит HSTS сам (max-age=31536000), preload там не действует;
+    # строка нужна для своего домена, если он появится
     Strict-Transport-Security = "max-age=63072000; includeSubDomains; preload"
 
 # service worker и манифест всегда свежие, иначе новая версия придёт только через сутки

@@ -83,9 +83,9 @@ test('нагрузка недели: 7 дней от сегодня, сегод�
   assert.equal(load[6].date, '2026-11-17');
 });
 
-test('приветствие по часу: границы 5, 12, 18 и полночь', () => {
+test('приветствие по часу: границы 5, 12 и 18, после полуночи вечер', () => {
   assert.deepEqual([4, 5, 11, 12, 17, 18, 23, 0].map(greetingKey),
-    ['night', 'morning', 'morning', 'afternoon', 'afternoon', 'evening', 'evening', 'night']);
+    ['evening', 'morning', 'morning', 'afternoon', 'afternoon', 'evening', 'evening', 'evening']);
 });
 
 test('готовые по дням закрытия, свежие сверху', () => {

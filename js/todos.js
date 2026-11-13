@@ -357,12 +357,12 @@ export function weekLoad(todos, today, days = 7) {
   });
 }
 
-// Приветствие по часу: утро 5–11, день 12–17, вечер 18–23, ночь 0–4.
+// Приветствие по часу: утро 5–11, день 12–17, вечер 18–4.
+// После полуночи тоже «Добрый вечер»: «Доброй ночи» звучит как прощание.
 export function greetingKey(hour) {
   if (hour >= 5 && hour < 12) return 'morning';
   if (hour >= 12 && hour < 18) return 'afternoon';
-  if (hour >= 18) return 'evening';
-  return 'night';
+  return 'evening';
 }
 
 // Выполненные по дням закрытия, свежие сверху.

@@ -103,6 +103,8 @@ const ru = {
   'menu.nextWeek': 'На следующую неделю',
   'menu.noDate': 'Без срока',
   'menu.delete': 'Удалить',
+  'menu.up': 'Выше',
+  'menu.down': 'Ниже',
   'toast.rescheduled': 'Перенесено на {when}: «{title}»',
   'toast.undated': 'Срок убран: «{title}»',
   'toast.movedToday': { one: '{n} задача перенесена на сегодня', few: '{n} задачи перенесены на сегодня', many: '{n} задач перенесено на сегодня', other: '{n} задачи перенесено на сегодня' },
@@ -158,6 +160,7 @@ const ru = {
   'skip': 'К новой задаче',
   'add.empty': 'Сначала напишите задачу',
   'add.cut': 'Название длиннее {n} символов: продолжение перенесено в заметку.',
+  'add.cutTo': 'Добавлено в «{view}». Название длиннее {n} символов: продолжение в заметке.',
   'steps.limit': 'В задаче может быть до {n} шагов. Не влезло строк: {m}.',
   'toast.reopened': 'Снова в работе: «{title}»',
   'steps.full': 'В задаче уже {n} шагов, больше не добавить.',
@@ -171,7 +174,6 @@ const ru = {
   'greeting.morning': 'Доброе утро',
   'greeting.afternoon': 'Добрый день',
   'greeting.evening': 'Добрый вечер',
-  'greeting.night': 'Доброй ночи',
   'status.empty': 'Список пока пуст. Запишите, что держите в голове: одна строка и Enter.',
   'status.pick': 'На сегодня пока ничего. Возьмите задачу из списка ниже или добавьте новую.',
   'status.free': 'Сегодня свободно. Если что-то появится, запишите сюда.',
@@ -360,6 +362,8 @@ const en = {
   'menu.nextWeek': 'Next week',
   'menu.noDate': 'No date',
   'menu.delete': 'Delete',
+  'menu.up': 'Move up',
+  'menu.down': 'Move down',
   'toast.rescheduled': 'Moved to {when}: “{title}”',
   'toast.undated': 'Date removed: “{title}”',
   'toast.movedToday': { one: '{n} task moved to today', other: '{n} tasks moved to today' },
@@ -415,6 +419,7 @@ const en = {
   'skip': 'Skip to new task',
   'add.empty': 'Type a task first',
   'add.cut': 'The title is longer than {n} characters: the rest is moved to the note.',
+  'add.cutTo': 'Added to {view}. The title is longer than {n} characters: the rest is in the note.',
   'steps.limit': 'A task can have up to {n} steps. Lines that didn’t fit: {m}.',
   'toast.reopened': 'Back to open: “{title}”',
   'steps.full': 'This task already has {n} steps, no more can be added.',
@@ -428,7 +433,6 @@ const en = {
   'greeting.morning': 'Good morning',
   'greeting.afternoon': 'Good afternoon',
   'greeting.evening': 'Good evening',
-  'greeting.night': 'Good night',
   'status.empty': 'Your list is empty for now. Write down what’s on your mind: one line, then Enter.',
   'status.pick': 'Nothing planned for today yet. Take a task from the list below or add a new one.',
   'status.free': 'Today is free. If something comes up, add it here.',
@@ -610,11 +614,15 @@ export function createI18n(lang) {
   const monthLong = new Intl.DateTimeFormat(locale, { month: 'long' });
   // Листок дня: «ноябрь», «среда»
   const dayMonthLong = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long' });
+  const monthShort = new Intl.DateTimeFormat(locale, { month: 'short' });
   const leafParts = (date) => ({
     month: monthLong.format(date),
     weekday: weekday.format(date),
-    // «ноября» для подписи под числом; в английском месяц не склоняется
-    monthOf: dayMonthLong.formatToParts(date).find((p) => p.type === 'month')?.value ?? monthLong.format(date),
+    // «ноября» для подписи под числом в узком листке (56 px). Английское «September»
+    // туда не влезает, а склонения нет: короткое «Sep»
+    monthOf: lang === 'ru'
+      ? dayMonthLong.formatToParts(date).find((p) => p.type === 'month')?.value ?? monthLong.format(date)
+      : trimDot(monthShort.format(date)),
   });
 
   return { lang, locale, t, relativeDate, groupDate, longDate, shortDate, weekCell, leafParts };

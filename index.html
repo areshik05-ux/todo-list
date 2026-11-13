@@ -44,6 +44,8 @@
     <symbol id="i-more" viewBox="0 0 20 20"><circle cx="5" cy="10" r="1.3" class="fill"/><circle cx="10" cy="10" r="1.3" class="fill"/><circle cx="15" cy="10" r="1.3" class="fill"/></symbol>
     <symbol id="i-check" viewBox="0 0 20 20"><path d="m5.5 10.5 3 3 6-6.5"/></symbol>
     <symbol id="i-arrow" viewBox="0 0 20 20"><path d="M4.5 10h11m-4-4 4 4-4 4"/></symbol>
+    <symbol id="i-up" viewBox="0 0 20 20"><path d="M10 15.5v-11m-4 4 4-4 4 4"/></symbol>
+    <symbol id="i-down" viewBox="0 0 20 20"><path d="M10 4.5v11m-4-4 4 4 4-4"/></symbol>
     <symbol id="i-slash" viewBox="0 0 20 20"><rect x="3" y="4.5" width="14" height="12" rx="2"/><path d="M3 8.5h14M7 3v3M13 3v3M7.5 14l5-3.5"/></symbol>
     <symbol id="i-back" viewBox="0 0 20 20"><path d="M4.2 8.5A6.5 6.5 0 1 1 4 12M4 4.5v4h4"/><path d="M10 7v3.2l2 1.3"/></symbol>
     <symbol id="i-bell" viewBox="0 0 20 20"><path d="M5.5 13.5V9a4.5 4.5 0 0 1 9 0v4.5l1.5 1.5h-12zM8.5 17h3"/></symbol>
@@ -164,7 +166,7 @@
       <form class="composer" id="add-form" autocomplete="off">
         <svg class="icon composer-icon" aria-hidden="true"><use href="#i-plus"/></svg>
         <label class="visually-hidden" for="new-todo" data-i18n="add.label">Новая задача</label>
-        <input id="new-todo" type="text" maxlength="300" enterkeyhint="done"
+        <input id="new-todo" type="text" maxlength="2000" enterkeyhint="done"
                aria-describedby="add-hint" data-i18n-attr="placeholder:add.placeholder"
                placeholder="Добавить задачу">
         <kbd class="key-hint" aria-hidden="true">N</kbd>
@@ -258,8 +260,17 @@
   <div class="row-menu" id="row-menu" role="menu" hidden>
     <button type="button" class="menu-item" role="menuitem" data-action="edit">
       <svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg>
-      <span data-i18n="task.edit">Изменить</span>
+      <span class="menu-label" data-i18n="task.edit">Изменить</span>
     </button>
+    <button type="button" class="menu-item" role="menuitem" data-action="up">
+      <svg class="icon" aria-hidden="true"><use href="#i-up"/></svg>
+      <span class="menu-label" data-i18n="menu.up">Выше</span>
+    </button>
+    <button type="button" class="menu-item" role="menuitem" data-action="down">
+      <svg class="icon" aria-hidden="true"><use href="#i-down"/></svg>
+      <span class="menu-label" data-i18n="menu.down">Ниже</span>
+    </button>
+    <div class="menu-sep menu-sep-top" role="separator"></div>
     <button type="button" class="menu-item" role="menuitem" data-action="today">
       <svg class="icon" aria-hidden="true"><use href="#i-today"/></svg>
       <span class="menu-label" data-i18n="menu.today">На сегодня</span>

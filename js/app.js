@@ -290,7 +290,9 @@ function renderHeader(d, total) {
     : today ? i18n.longDate(new Date())
       : t('tasks', { n: total }) + week;
   dayStatusEl.hidden = !today;
-  if (today) dayStatusEl.textContent = statusText(d);
+  // пока отмеченная строка стоит на месте, строка дня не меняется: новая строка текста
+  // сдвинула бы список под пальцем. Обновится, когда задача уйдёт вниз.
+  if (today && (!lingering.size || !dayStatusEl.textContent)) dayStatusEl.textContent = statusText(d);
   // вечером: перенести всё оставшееся на завтра
   dayActions.hidden = !(today && new Date().getHours() >= EVENING_HOUR && d.open > 0);
 }
@@ -1247,7 +1249,8 @@ form.addEventListener('submit', (e) => {
   }
   const shownIn = inView(added, view === 'done' ? 'all' : view, today, dayKeyOf) ? null
     : added.due && added.due > today ? 'upcoming' : 'all';
-  if (rest) showToast(t('add.cut', { n: MAX_TITLE_LENGTH }));
+  // обрезанное название: одно сообщение и про обрезку, и про раздел, куда попала задача
+  if (rest) showToast(shownIn ? t('add.cutTo', { n: MAX_TITLE_LENGTH, view: t(`view.${shownIn}`) }) : t('add.cut', { n: MAX_TITLE_LENGTH }));
   else if (shownIn) showToast(t('toast.addedTo', { title: added.title, view: t(`view.${shownIn}`) }));
   else announce(t('toast.added', { title: added.title }));
 });
@@ -1371,12 +1374,22 @@ function openMenu(opener) {
   rowMenu.setAttribute('aria-label', t('menu.label', { title: todo?.title ?? '' }));
   const today = todayKey();
   const shown = new Set();
-  // «Изменить» в меню, только когда кнопки в строке нет (узкий экран)
+  // Меню «⋯»: «Изменить», когда карандаша в строке нет (узкий экран), и «Выше»/«Ниже»
+  // в своём порядке (на телефоне ручки нет). В меню срока только даты.
+  const more = menu.kind === 'more';
   const editInRow = Boolean($('.todo-edit', li)?.getClientRects().length);
+  const siblings = moveSiblings(li);
+  const at = siblings.indexOf(li.dataset.id);
+  const canMove = more && dragEnabled && !todo?.done;
+  const rowItems = {
+    edit: more && !editInRow,
+    up: canMove && at > 0,
+    down: canMove && at < siblings.length - 1,
+  };
   for (const item of $$('[data-action]', rowMenu)) {
     const { action } = item.dataset;
-    if (action === 'edit') {
-      item.hidden = editInRow;
+    if (action in rowItems) {
+      item.hidden = !rowItems[action];
       continue;
     }
     const due = DUE_ACTIONS[action]?.(today);
@@ -1389,7 +1402,8 @@ function openMenu(opener) {
       || (action === 'calendar' && !todo?.due);
     if (due !== undefined && !item.hidden) shown.add(due);
   }
-  $('.menu-sep', rowMenu).hidden = todo?.done ?? false;
+  $('.menu-sep-top', rowMenu).hidden = !Object.values(rowItems).some(Boolean);
+  $('.menu-sep:not(.menu-sep-top)', rowMenu).hidden = todo?.done ?? false;
   rowMenu.hidden = false;
   placeMenu();
   $$('[data-action]:not([hidden])', rowMenu)[0]?.focus();
@@ -1431,6 +1445,11 @@ rowMenu.addEventListener('click', (e) => {
   if (!li) return;
   if (item.dataset.action === 'edit') {
     startEditing(li);
+    return;
+  }
+  if (item.dataset.action === 'up' || item.dataset.action === 'down') {
+    // фокус обратно на «⋯» строки: можно сразу сдвинуть ещё раз
+    moveByKeyboard(li, item.dataset.action === 'up' ? -1 : 1, '.todo-more');
     return;
   }
   if (item.dataset.action === 'delete') {
@@ -1805,16 +1824,21 @@ listWrap.addEventListener('pointerdown', (e) => {
   handle.addEventListener('pointercancel', onEnd);
 });
 
-function moveByKeyboard(li, step) {
-  if (!dragEnabled) return;
-  const ul = li.parentElement;
-  // в «Сегодня» сделанные стоят под открытыми: двигаем только среди своих
+// Строки, среди которых задача двигается: в «Сегодня» сделанные стоят под открытыми,
+// поэтому только среди своих.
+function moveSiblings(li) {
   const done = li.classList.contains('is-done');
-  const ids = [...ul.children].filter((row) => row.classList.contains('is-done') === done).map((row) => row.dataset.id);
+  return [...li.parentElement.children].filter((row) => row.classList.contains('is-done') === done).map((row) => row.dataset.id);
+}
+
+// Alt+стрелки и «Выше»/«Ниже» в меню строки.
+function moveByKeyboard(li, step, focusSelector = null) {
+  if (!dragEnabled) return;
+  const ids = moveSiblings(li);
   const id = li.dataset.id;
   const next = moveWithin(todos, ids, id, step);
   if (next === todos) return;
-  const selector = document.activeElement?.classList.contains('handle') ? '.handle' : '.todo-check';
+  const selector = focusSelector ?? (document.activeElement?.classList.contains('handle') ? '.handle' : '.todo-check');
   commit(next, { focus: { id, selector } });
   announce(t('task.moved', { pos: ids.indexOf(id) + 1 + step, total: ids.length }));
 }
@@ -1835,8 +1859,12 @@ function showToast(message, { snapshot = null, focus = null, action = null, say 
   toastUndo.textContent = action?.label ?? t('toast.undo');
   toastUndo.hidden = !snapshot && !action;
   toast.hidden = false;
-  // сообщение не закрывает элемент в фокусе (WCAG 2.4.11): прокрутка к фокусу оставляет место снизу
-  document.documentElement.style.setProperty('scroll-padding-bottom', `${toast.offsetHeight + 24}px`);
+  // сообщение не закрывает элемент в фокусе (WCAG 2.4.11): прокрутка к фокусу оставляет место снизу,
+  // а под последней ссылкой страницы есть куда прокрутить
+  const room = toast.offsetHeight + 24;
+  document.documentElement.style.setProperty('scroll-padding-bottom', `${room}px`);
+  main.style.removeProperty('padding-bottom');
+  if (parseFloat(getComputedStyle(main).paddingBottom) < room) main.style.setProperty('padding-bottom', `${room}px`);
   announce(say);
   undo = { snapshot, focus, action, timer: setTimeout(dropUndo, TOAST_MS) };
 }
@@ -1850,6 +1878,7 @@ function dropUndo() {
   if (toast.contains(document.activeElement)) restoreFocus(focus ?? (finePointer() ? 'input' : viewTitle));
   toast.hidden = true;
   document.documentElement.style.removeProperty('scroll-padding-bottom');
+  main.style.removeProperty('padding-bottom');
 }
 
 function applyUndo() {
@@ -2013,7 +2042,7 @@ empty.addEventListener('click', (e) => {
   }
   const act = e.target.closest('[data-act]')?.dataset.act;
   if (act === 'focus-add') input.focus();
-  else if (act === 'clear-search') setQuery('', true);
+  else if (act === 'clear-search') clearSearch();
   else if (act === 'open-upcoming') location.hash = '#/upcoming';
   else if (act === 'open-today') location.hash = '#/today';
   else if (act === 'open-done') location.hash = '#/done';
@@ -2061,7 +2090,15 @@ search.addEventListener('keydown', (e) => {
   else closeSearchTools();
 });
 
-searchClear.addEventListener('click', () => setQuery('', true));
+// × и «Убрать фильтр»: мышь остаётся в поле поиска, на телефоне фокус на заголовке,
+// иначе поле в фокусе открыло бы клавиатуру поверх списка
+function clearSearch() {
+  if (finePointer()) return setQuery('', true);
+  setQuery('');
+  return viewTitle.focus({ preventScroll: true });
+}
+
+searchClear.addEventListener('click', clearSearch);
 
 // Телефон и узкое окно: поиск и порядок спрятаны за лупой в верхней строке, чтобы список был ближе.
 // Клавиша «/» сначала открывает их, иначе фокус ушёл бы в скрытое поле.
