@@ -15,6 +15,16 @@ export function normalizeTitle(text) {
   return String(text ?? '').replace(/\s+/g, ' ').trim().slice(0, MAX_TITLE_LENGTH);
 }
 
+// Слишком длинное название из быстрого ввода: режем по границе слова,
+// а продолжение отдаём в заметку, чтобы текст не пропал молча.
+export function splitLongTitle(text, max = MAX_TITLE_LENGTH) {
+  const clean = String(text ?? '').replace(/\s+/g, ' ').trim();
+  if (clean.length <= max) return { title: clean, rest: '' };
+  const space = clean.lastIndexOf(' ', max);
+  const cut = space > max / 2 ? space : max;
+  return { title: clean.slice(0, cut).trim(), rest: clean.slice(cut).trim() };
+}
+
 function makeId() {
   if (globalThis.crypto?.randomUUID) return crypto.randomUUID();
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -347,11 +357,12 @@ export function weekLoad(todos, today, days = 7) {
   });
 }
 
-// Приветствие по часу: утро 5–11, день 12–17, вечер 18–4.
+// Приветствие по часу: утро 5–11, день 12–17, вечер 18–23, ночь 0–4.
 export function greetingKey(hour) {
   if (hour >= 5 && hour < 12) return 'morning';
   if (hour >= 12 && hour < 18) return 'afternoon';
-  return 'evening';
+  if (hour >= 18) return 'evening';
+  return 'night';
 }
 
 // Выполненные по дням закрытия, свежие сверху.
@@ -372,10 +383,9 @@ export function groupDoneByDay(todos, dayKeyOf) {
 // restMoved: вечером остальное перенесли на завтра.
 export function dayStatus({ all, open, done, total, suggestions, week, restMoved = false }, full = 6) {
   if (!all) return [['status.empty', {}]];
-  if (!total) {
-    if (restMoved) return [['status.moved', {}]];
-    return [[suggestions ? 'status.pick' : 'status.free', {}]];
-  }
+  // перенос вечером: «всё сделано» было бы неправдой, часть дел ушла на завтра
+  if (restMoved && !open) return done ? [['status.doneSome', { n: done }], ['status.moved', {}]] : [['status.moved', {}]];
+  if (!total) return [[suggestions ? 'status.pick' : 'status.free', {}]];
   if (done === total) {
     const parts = [['status.allDone', { done, total }], ['status.rest', {}]];
     if (week > done) parts.push(['status.week', { n: week }]);

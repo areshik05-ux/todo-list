@@ -45,3 +45,22 @@ test('подписи сроков', () => {
   assert.match(en.relativeDate('2027-01-03', TODAY), /2027$/);
   assert.equal(ru.relativeDate('мусор', TODAY), '');
 });
+
+test('две точки подряд не ставятся: «20 нояб.» в конце предложения', () => {
+  const date = ru.groupDate('2026-11-23', TODAY);
+  assert.ok(date.endsWith('.'), date);
+  assert.equal(ru.t('task.dueButton', { date }), `Срок: ${date} Перенести`);
+  assert.equal(en.t('task.dueButton', { date: 'Mon, 23 Nov' }), 'Due: Mon, 23 Nov. Reschedule');
+});
+
+test('короткие русские слова не висят в конце строки', () => {
+  const nb = '\u00A0';
+  assert.equal(ru.t('footer.offline'), `Работает и${nb}без${nb}интернета.`);
+  assert.equal(ru.t('footer.code'), `код на${nb}GitHub`);
+  assert.equal(ru.t('status.progress', { done: 1, total: 3, left: 2 }), `Сделано 1 из${nb}3. Осталось: 2.`);
+  // название задачи не трогаем, английский тоже
+  assert.equal(ru.t('toast.completed', { title: 'Позвонить в банк' }), 'Готово: «Позвонить в банк»');
+  assert.equal(en.t('footer.offline'), 'Works offline too.');
+  // примеры попадают в поле ввода как есть
+  assert.equal(ru.t('sample.bank'), 'Позвонить в банк');
+});

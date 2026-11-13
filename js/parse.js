@@ -46,12 +46,19 @@ const MONTH_EN = MONTHS_EN.join('|');
 // «may 5» не берём: в «I may 5 times» это не май
 const MONTH_EN_LEAD = MONTHS_EN.filter((m) => m !== 'may').join('|');
 const NUM = '\\d{1,2}|один|одну|два|две|три|четыре|пять|one|two|three|four|five';
+// 25.11, 25.11.2026, 25/11. Месяц строго двумя цифрами, чтобы «1.5 литра» не стало 1 мая.
+const NUM_DATE = '(\\d{1,2})[./](\\d{2})(?:[./](\\d{4}))?';
+// «2.10 кг», «1.25 л», «3.50 $»: после числа единица, значит это не дата
+const NOT_UNIT = '(?!\\s?(?:кг|гр?|мг|л|мл|м|см|мм|км|шт|руб|р|коп|ч|мин|сек|kg|g|mg|lbs?|oz|l|ml|m|cm|mm|km|pcs|h|min|sec|%|\\$|€|₽)(?![\\p{L}\\p{N}_]))';
+// предлог перед сроком уходит вместе с ним: «к 25.11», «до завтра», «на пятницу», «on friday»
+const PRE = '(?:on |by |к |до |на )?';
 
-// Каждое правило: регулярка и функция, которая по совпадению и «сегодня» даёт дату.
+// Каждое правило: регулярка, функция, которая по совпадению и «сегодня» даёт дату,
+// и признак keep: текст остаётся в названии (диапазон «с 25.12 по 05.01» нужен целиком).
 const DATE_RULES = [
-  [re('(?:к |до )?сегодня|(?:by )?today'), (_, t) => t],
-  [re('(?:к |до )?послезавтра|day after tomorrow'), (_, t) => addDays(t, 2)],
-  [re('(?:к |до )?завтра|(?:by )?tomorrow|tmr'), (_, t) => addDays(t, 1)],
+  [re('(?:к |до |на )?сегодня|(?:by )?today'), (_, t) => t],
+  [re('(?:к |до |на )?послезавтра|day after tomorrow'), (_, t) => addDays(t, 2)],
+  [re('(?:к |до |на )?завтра|(?:by )?tomorrow|tmr'), (_, t) => addDays(t, 1)],
   [re('через неделю|next week|in a week'), (_, t) => addDays(t, 7)],
   [re(`через (${NUM}) (?:день|дня|дней)|in (${NUM}) days?`),
     (m, t) => addDays(t, toNumber(m[1] ?? m[2]))],
@@ -60,15 +67,17 @@ const DATE_RULES = [
   ...WEEKDAYS.map(([day, ru, dative, genitive, short, en]) => [
     // по-русски только с предлогом: «в среду» срок, а «настроить среду» нет;
     // английское сокращение только с on/next: «mon» само по себе не день
-    re(`(?:в|во) (?:${ru}|${short})|к ${dative}|до ${genitive}|(?:on |next |by )?(?:${en.split('|')[0]})|(?:on |next )${en.split('|')[1]}`),
+    re(`(?:в|во|на) (?:${ru}|${short})|к ${dative}|до ${genitive}|(?:on |next |by )?(?:${en.split('|')[0]})|(?:on |next )${en.split('|')[1]}`),
     (_, t) => nextWeekday(t, day),
   ]),
-  // 25.11, 25.11.2026, 25/11. Месяц строго двумя цифрами, чтобы «1.5 литра» не стало 1 мая.
+  // «Отпуск с 25.12 по 05.01»: срок по первой дате, а сам диапазон остаётся в названии
+  [re(`(?:с|from) ${NUM_DATE} (?:по|до|to|till|until) \\d{1,2}[./]\\d{2}(?:[./]\\d{4})?${NOT_UNIT}`),
+    (m, t) => dayMonthKey(t, Number(m[1]), Number(m[2]), m[3] ? Number(m[3]) : undefined), { keep: true }],
   // «on» перед датой тоже срезаем: «pay rent on 25.11» → «pay rent».
-  [re('(?:on |by |к |до )?(\\d{1,2})[./](\\d{2})(?:[./](\\d{4}))?'),
+  [re(`${PRE}${NUM_DATE}${NOT_UNIT}`),
     (m, t) => dayMonthKey(t, Number(m[1]), Number(m[2]), m[3] ? Number(m[3]) : undefined)],
   // 25 ноября, 25 nov, 25 november 2026
-  [re(`(?:on |by |к |до )?(\\d{1,2}) (${MONTH_RU}|${MONTH_EN})(?: (\\d{4}))?`),
+  [re(`${PRE}(\\d{1,2}) (${MONTH_RU}|${MONTH_EN})(?: (\\d{4}))?`),
     (m, t) => dayMonthKey(t, Number(m[1]), monthIndex(m[2]), m[3] ? Number(m[3]) : undefined)],
   // nov 25, november 25
   [re(`(?:on )?(${MONTH_EN_LEAD}) (\\d{1,2})(?: (\\d{4}))?`),
@@ -101,7 +110,8 @@ const REPEAT_RULES = [
 ];
 
 const PRIORITY_RE = re('!([1-3])|p([1-3])');
-const TAG_RE = /(?<![\p{L}\p{N}_#])#([\p{L}\p{N}_-]{1,30})(?![\p{L}\p{N}_-])/gu;
+// в метке нужна хотя бы одна буква: «Issue #42» номер, а не метка
+const TAG_RE = /(?<![\p{L}\p{N}_#])#((?=[\p{N}_-]*\p{L})[\p{L}\p{N}_-]{1,30})(?![\p{L}\p{N}_-])/gu;
 
 function collect(regex, text, make) {
   const found = [];
@@ -127,7 +137,11 @@ export function parseQuickAdd(input, today, { ignore = [] } = {}) {
   const taken = [];
   const tokens = [];
   const accept = (type, match) => {
-    if (skip.has(match.text.toLowerCase())) return false;
+    if (skip.has(match.text.toLowerCase())) {
+      // снятый крестиком диапазон закрывает и даты внутри него
+      if (match.keep) taken.push(match);
+      return false;
+    }
     if (taken.some((t) => overlaps(t, match))) return false;
     taken.push(match);
     tokens.push({ type, text: match.text, value: match.value, start: match.start });
@@ -150,7 +164,7 @@ export function parseQuickAdd(input, today, { ignore = [] } = {}) {
 
   // Срок: берём самое раннее упоминание в строке, остальное остаётся текстом.
   const dates = DATE_RULES
-    .flatMap(([regex, make]) => collect(regex, text, (m) => make(m, today)))
+    .flatMap(([regex, make, opts]) => collect(regex, text, (m) => make(m, today)).map((d) => ({ ...d, ...opts })))
     .sort((a, b) => a.start - b.start || (b.end - b.start) - (a.end - a.start));
   let due = null;
   for (const d of dates) {
@@ -173,7 +187,7 @@ export function parseQuickAdd(input, today, { ignore = [] } = {}) {
   }
 
   let title = text;
-  for (const t of [...taken].sort((a, b) => b.start - a.start)) {
+  for (const t of [...taken].filter((x) => !x.keep).sort((a, b) => b.start - a.start)) {
     title = title.slice(0, t.start) + ' ' + title.slice(t.end);
   }
   // «Встреча завтра.» → «Встреча.»: знак препинания не висит после вырезанного слова

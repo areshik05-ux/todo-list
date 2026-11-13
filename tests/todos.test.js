@@ -5,7 +5,7 @@ import {
   moveTodo, moveTodoAfter, moveWithin, inView, countViews, todayProgress, matchesQuery,
   sortTodos, sortDone, normalizeTitle, MAX_TITLE_LENGTH,
   completeTodo, toggleStep, stepProgress, rescheduleOverdue, normalizeNotes, normalizeSteps, MAX_STEPS,
-  removeSamples, addSteps,
+  removeSamples, addSteps, splitLongTitle,
 } from '../js/todos.js';
 import { toKey } from '../js/dates.js';
 
@@ -252,4 +252,15 @@ test('снятие отметки не удаляет следующий раз,
   assert.equal(back.length, 2, 'правленый следующий раз остаётся');
   assert.equal(back.find((t) => t.id === next.id).notes, 'важная заметка');
   assert.equal(back.find((t) => t.id === 'r').repeat, null, 'повтор остаётся у следующего раза, а не у двух задач');
+});
+
+test('длинное название из быстрого ввода: обрезка по слову, продолжение в заметку', () => {
+  const words = Array.from({ length: 60 }, (_, i) => `слово${i}`).join(' ');
+  const { title, rest } = splitLongTitle(words);
+  assert.ok(title.length <= MAX_TITLE_LENGTH, String(title.length));
+  assert.ok(!title.endsWith(' ') && words.startsWith(title));
+  assert.equal(`${title} ${rest}`, words, 'ничего не потерялось');
+  assert.deepEqual(splitLongTitle('  Купить   хлеб '), { title: 'Купить хлеб', rest: '' });
+  const solid = 'я'.repeat(250);
+  assert.deepEqual(splitLongTitle(solid), { title: 'я'.repeat(200), rest: 'я'.repeat(50) });
 });

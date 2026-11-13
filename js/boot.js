@@ -40,6 +40,15 @@
   // и шапка дня не сдвигает поле ввода, когда скрипт дорисует её (CLS)
   var hash = location.hash;
   root.dataset.boot = !hash || hash === '#/' || hash === '#/today' ? 'today' : 'other';
+  // список сохранён и пуст: подсказка под полем и кольцо сразу в пустом виде (CLS на телефоне).
+  // Первый визит (записи нет) не пустой: app.js покажет примеры задач.
+  try {
+    var raw = localStorage.getItem('todo-list:v2');
+    var stored = raw === null ? null : JSON.parse(raw);
+    if (stored && stored.todos && stored.todos.length === 0) root.dataset.empty = '';
+  } catch (e) {
+    // испорченные данные разберёт app.js
+  }
   // разметка написана по-русски: английскому читателю прячем её до перевода
   if (lang === 'en') root.classList.add('i18n-pending');
 }());

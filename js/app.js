@@ -3,6 +3,7 @@ import {
   toggleStep, stepProgress, rescheduleOverdue, addSteps, removeSamples, MAX_STEPS,
   inView, countViews, todayProgress, matchesQuery, sortTodos, sortDone, VIEWS,
   suggestForToday, moveOpenTo, doneThisWeek, weekLoad, greetingKey, groupDoneByDay, dayStatus, planMode,
+  splitLongTitle, MAX_TITLE_LENGTH,
 } from './todos.js';
 import {
   loadTodos, loadTodosReport, saveTodos, loadSettings, saveSettings, exportJSON, importJSON, storageAvailable, isFirstVisit,
@@ -184,11 +185,14 @@ function svgIcon(name, className = 'icon') {
   return svg;
 }
 
+// Открытая или только что отмеченная (ещё стоит на месте) задача остаётся среди открытых.
+const staysUp = (todo) => !todo.done || lingering.has(todo.id);
+
 function visibleGroups(today) {
   if (query) {
     const found = todos.filter((todo) => matchesQuery(todo, query) || todo.id === editingId);
-    const open = sortTodos(found.filter((todo) => !todo.done), settings.sort);
-    return [{ items: [...open, ...sortDone(found.filter((todo) => todo.done))] }];
+    const open = sortTodos(found.filter(staysUp), settings.sort);
+    return [{ items: [...open, ...sortDone(found.filter((todo) => !staysUp(todo)))] }];
   }
 
   // открытый редактор не исчезает, даже если «Вернуть» или другая вкладка увели задачу из раздела
@@ -214,9 +218,9 @@ function visibleGroups(today) {
 
   if (view === 'today') {
     const sorted = sortTodos(shown, settings.sort);
-    const overdue = sorted.filter((todo) => !todo.done && todo.due < today);
+    const overdue = sorted.filter((todo) => staysUp(todo) && todo.due !== null && todo.due < today);
     const rest = sorted.filter((todo) => !overdue.includes(todo));
-    const ordered = [...rest.filter((todo) => !todo.done), ...rest.filter((todo) => todo.done)];
+    const ordered = [...rest.filter(staysUp), ...rest.filter((todo) => !staysUp(todo))];
     if (!overdue.length) return [{ items: ordered }];
     return [
       { title: t('group.overdue'), overdue: true, items: overdue },
@@ -241,16 +245,18 @@ function doneDayTitle(day, today) {
 function dayInfo(today) {
   const counts = countViews(todos, today);
   const progress = todayProgress(todos, today, dayKeyOf);
+  // вечером остальное перенесли, на сегодня открытых нет: день не «закрыт», а отложен
+  const restMoved = restMovedDay === today && counts.today === 0;
   return {
     counts,
     open: counts.today,
     done: progress.done,
     total: progress.total,
-    closed: progress.total > 0 && progress.done === progress.total,
+    closed: progress.total > 0 && progress.done === progress.total && !restMoved,
     suggestions: suggestForToday(todos, today),
     week: doneThisWeek(todos, today, dayKeyOf),
     all: todos.length,
-    restMoved: restMovedDay === today && progress.total === 0,
+    restMoved,
   };
 }
 
@@ -304,7 +310,7 @@ function renderLeaf(d) {
   const off = d.total ? 100 - (d.done / d.total) * 100 : 100;
   $('#ring-arc').style.setProperty('--ring-off', String(off));
   $('#ring-count').textContent = d.total ? t('ring.count', d) : '';
-  $('#ring-word').textContent = t(!d.total ? (d.suggestions.length ? 'ring.pick' : 'ring.free') : d.closed ? 'ring.allDone' : 'ring.done');
+  $('#ring-word').textContent = t(!d.total ? (d.suggestions.length && !d.restMoved ? 'ring.pick' : 'ring.free') : d.closed ? 'ring.allDone' : 'ring.done');
 }
 
 // Неделя: сегодня и шесть дней вперёд. Перерисовывается, только если что-то поменялось.
@@ -324,7 +330,9 @@ function renderWeek(d, today) {
     btn.className = 'week-day';
     btn.dataset.date = date;
     btn.tabIndex = date === weekFocus ? 0 : -1;
-    const name = i === 0 ? t('week.today', { date: cell.long }) : cell.long;
+    // «Сегодня, пятница, 13 ноября»: после запятой по-русски строчная, по-английски день с заглавной
+    const after = i18n.lang === 'ru' ? cell.long.charAt(0).toLowerCase() + cell.long.slice(1) : cell.long;
+    const name = i === 0 ? t('week.today', { date: after }) : cell.long;
     const allDone = i === 0 && d.closed;
     btn.setAttribute('aria-label', allDone ? t('week.dayDone', { date: name })
       : count ? t('week.day', { date: name, tasks: t('tasks', { n: count }) }) : t('week.dayNone', { date: name }));
@@ -540,28 +548,6 @@ function renderEmpty(model) {
     box.append(label, ul);
     parts.push(box);
   }
-  if (model.ghosts) {
-    // «тени» строк: показывают, что здесь появится; для скринридера их нет
-    const ghosts = document.createElement('div');
-    ghosts.className = 'ghosts';
-    ghosts.setAttribute('aria-hidden', 'true');
-    for (let i = 0; i < 3; i += 1) {
-      const row = document.createElement('div');
-      row.className = 'ghost';
-      const dot = document.createElement('span');
-      dot.className = 'ghost-dot';
-      const bars = document.createElement('span');
-      bars.className = 'ghost-bars';
-      for (let k = 0; k < 2; k += 1) {
-        const bar = document.createElement('span');
-        bar.className = 'ghost-bar';
-        bars.append(bar);
-      }
-      row.append(dot, bars);
-      ghosts.append(row);
-    }
-    parts.push(ghosts);
-  }
   empty.replaceChildren(...parts);
 }
 
@@ -574,8 +560,8 @@ function render(focus = currentFocus()) {
   renderedSlot = daySlot();
   const d = dayInfo(today);
   lastDay = { today, closed: d.closed };
-  // на сегодня снова что-то есть: вечерний перенос больше не сворачивает предложения
-  if (d.total && restMovedDay) setRestMoved(null);
+  // на сегодня снова что-то открыто (или день сменился): вечерний перенос больше не действует
+  if (restMovedDay && (d.open || restMovedDay !== today)) setRestMoved(null);
   const { counts } = d;
 
   for (const link of $$('[data-view]')) {
@@ -847,7 +833,10 @@ function renderItem(todo, today) {
     btn.type = 'button';
     btn.className = 'meta-tag';
     btn.dataset.tag = tag;
-    btn.textContent = `#${tag}`;
+    // длинная метка без пробелов обрезается многоточием, а не краем экрана
+    const label = document.createElement('span');
+    label.textContent = `#${tag}`;
+    btn.append(label);
     btn.setAttribute('aria-label', t('task.tagFilter', { tag: `#${tag}` }));
     meta.append(btn);
   }
@@ -1070,7 +1059,9 @@ function restoreFocus(focus) {
     return restoreFocus({ id: focus.fallback ?? '', selector: '.todo-check', index: 0 });
   }
   const item = listWrap.querySelector(`.todo[data-id="${CSS.escape(focus.id)}"]`);
-  const target = item && $(focus.selector, item);
+  // на телефоне «Изменить» и ручка спрятаны: фокус на «⋯» той же строки или на её кружок
+  const target = item && [focus.selector, '.todo-more', '.todo-check']
+    .map((sel) => $(sel, item)).find((el) => el?.getClientRects().length);
   // строка на месте, где по ней кликнули: прокрутка не нужна, а без неё фокус дешевле
   if (target) return target.focus({ preventScroll: Boolean(focus.still) });
   const rows = $$('.todo', listWrap);
@@ -1144,7 +1135,7 @@ function applyTheme() {
   const dark = themeNow() === 'dark';
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   themeBtn.setAttribute('aria-pressed', String(dark));
-  $('meta[name="theme-color"]').content = dark ? '#151921' : '#ffffff';
+  // цвет полосы браузера (meta theme-color) меняет boot.js вслед за data-theme
 }
 
 /* Быстрое добавление */
@@ -1243,7 +1234,9 @@ form.addEventListener('submit', (e) => {
   searchClear.hidden = true;
   form.reset();
   ignoreTokens = [];
-  const next = addTodo(todos, parsed);
+  // длиннее 200 символов: продолжение уходит в заметку, а не пропадает молча
+  const { title, rest } = splitLongTitle(parsed.title);
+  const next = addTodo(todos, { ...parsed, title, notes: rest });
   commit(next, { focus: 'input' });
   updateChips();
   const added = next[0];
@@ -1254,7 +1247,8 @@ form.addEventListener('submit', (e) => {
   }
   const shownIn = inView(added, view === 'done' ? 'all' : view, today, dayKeyOf) ? null
     : added.due && added.due > today ? 'upcoming' : 'all';
-  if (shownIn) showToast(t('toast.addedTo', { title: added.title, view: t(`view.${shownIn}`) }));
+  if (rest) showToast(t('add.cut', { n: MAX_TITLE_LENGTH }));
+  else if (shownIn) showToast(t('toast.addedTo', { title: added.title, view: t(`view.${shownIn}`) }));
   else announce(t('toast.added', { title: added.title }));
 });
 
@@ -1265,9 +1259,10 @@ function toggle(li) {
   const before = todos.find((todo) => todo.id === id);
   if (!before) return;
   const snapshot = todos;
-  const hidesDone = !query && (view === 'all' || view === 'upcoming');
-  // в «Все» и «Планах» отмеченная строка стоит на месте: фокус без прокрутки
-  const focus = { ...focusOf(li), still: hidesDone };
+  // Отмеченная строка немного стоит на месте, фокус без прокрутки: в «Все» и «Планах» потом
+  // уходит из списка, в «Сегодня» и поиске опускается к сделанным. Иначе страница уезжала бы за ней.
+  const lingers = view !== 'done' || Boolean(query);
+  const focus = { ...focusOf(li), still: lingers && (!before.done || lingering.has(id)) };
   if (before.done) {
     // сняли галочку, пока задача ещё не ушла: она остаётся на месте
     clearTimeout(lingering.get(id));
@@ -1276,7 +1271,7 @@ function toggle(li) {
     showToast(t('toast.reopened', { title: before.title }), { snapshot, focus: { id, selector: '.todo-check' } });
     return;
   }
-  if (hidesDone) {
+  if (lingers) {
     clearTimeout(lingering.get(id));
     lingering.set(id, setTimeout(() => leave(id), LINGER_MS));
   }
@@ -1376,8 +1371,14 @@ function openMenu(opener) {
   rowMenu.setAttribute('aria-label', t('menu.label', { title: todo?.title ?? '' }));
   const today = todayKey();
   const shown = new Set();
+  // «Изменить» в меню, только когда кнопки в строке нет (узкий экран)
+  const editInRow = Boolean($('.todo-edit', li)?.getClientRects().length);
   for (const item of $$('[data-action]', rowMenu)) {
     const { action } = item.dataset;
+    if (action === 'edit') {
+      item.hidden = editInRow;
+      continue;
+    }
     const due = DUE_ACTIONS[action]?.(today);
     const hint = $('.menu-hint', item);
     if (hint) hint.textContent = due ? i18n.shortDate(due) : '';
@@ -1428,6 +1429,10 @@ rowMenu.addEventListener('click', (e) => {
   const selector = opener.matches('.meta-due') ? 'button.meta-due' : '.todo-more';
   closeMenu(false);
   if (!li) return;
+  if (item.dataset.action === 'edit') {
+    startEditing(li);
+    return;
+  }
   if (item.dataset.action === 'delete') {
     remove(li);
     return;
@@ -1638,8 +1643,16 @@ listWrap.addEventListener('click', (e) => {
     ($('.step-remove', rest[Math.min(index, rest.length - 1)] ?? editor) ?? $('.step-new', editor)).focus();
   } else if (e.target.closest('.todo-edit')) startEditing(li);
   else if (e.target.closest('.editor-cancel')) finishEditing(false);
-  else if (e.target.closest('.meta-tag')) setQuery(`#${e.target.closest('.meta-tag').dataset.tag}`, true);
+  else if (e.target.closest('.meta-tag')) filterByTag(e.target.closest('.meta-tag').dataset.tag);
 });
+
+// Метка в строке: фильтр по ней. Мышь и клавиатура попадают в поле поиска,
+// на телефоне фокус на заголовке: поле в фокусе открыло бы клавиатуру поверх списка.
+function filterByTag(tag) {
+  const fine = finePointer();
+  setQuery(`#${tag}`, fine);
+  if (!fine) viewTitle.focus({ preventScroll: true });
+}
 
 // Вставили несколько строк: каждая становится шагом (как в Things).
 listWrap.addEventListener('paste', (e) => {
@@ -1822,6 +1835,8 @@ function showToast(message, { snapshot = null, focus = null, action = null, say 
   toastUndo.textContent = action?.label ?? t('toast.undo');
   toastUndo.hidden = !snapshot && !action;
   toast.hidden = false;
+  // сообщение не закрывает элемент в фокусе (WCAG 2.4.11): прокрутка к фокусу оставляет место снизу
+  document.documentElement.style.setProperty('scroll-padding-bottom', `${toast.offsetHeight + 24}px`);
   announce(say);
   undo = { snapshot, focus, action, timer: setTimeout(dropUndo, TOAST_MS) };
 }
@@ -1834,6 +1849,7 @@ function dropUndo() {
   // на телефоне в поле не возвращаем: открылась бы клавиатура
   if (toast.contains(document.activeElement)) restoreFocus(focus ?? (finePointer() ? 'input' : viewTitle));
   toast.hidden = true;
+  document.documentElement.style.removeProperty('scroll-padding-bottom');
 }
 
 function applyUndo() {
@@ -2021,6 +2037,9 @@ function setQuery(value, focusSearch = false) {
   query = value.trim().slice(0, 100);
   search.value = value;
   searchClear.hidden = !value;
+  // узкий экран: панель поиска видна, пока идёт поиск; когда его сбрасывают из поля,
+  // панель остаётся открытой, иначе фокус ушёл бы в спрятанное поле
+  if (focusSearch && searchToggle.offsetParent !== null) main.classList.add('tools-open');
   render();
   if (focusSearch) search.focus();
   else if (pendingJump) runJump();
@@ -2037,7 +2056,8 @@ search.addEventListener('input', () => {
 search.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   e.preventDefault();
-  if (search.value) setQuery('');
+  // первый Esc очищает поле (фокус в нём же), второй прячет панель
+  if (search.value) setQuery('', true);
   else closeSearchTools();
 });
 
@@ -2255,6 +2275,7 @@ let pendingTask = null; // задача, к которой перейти пос
 
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform ?? '');
 if (isMac) for (const kbd of $$('.mod-key')) kbd.textContent = '⌘';
+if (isMac) for (const kbd of $$('.del-key')) kbd.textContent = '⌫';
 
 const VIEW_ICONS = { today: 'today', upcoming: 'upcoming', all: 'all', done: 'done' };
 
@@ -2513,7 +2534,8 @@ document.addEventListener('keydown', (e) => {
   } else if (e.code === 'KeyE') {
     e.preventDefault();
     startEditing(row);
-  } else if (e.key === 'Delete') {
+  } else if (e.key === 'Delete' || (e.key === 'Backspace' && isMac)) {
+    // у ноутбуков Mac нет клавиши Del: там удаляет ⌫
     e.preventDefault();
     remove(row);
   } else if (e.code === 'KeyT' || e.code === 'KeyM') {
@@ -2541,6 +2563,11 @@ window.addEventListener('storage', (e) => {
     applyTheme();
     applyLanguage();
     render();
+  } else if (e.key === REST_MOVED_KEY) {
+    // вечерний перенос в другой вкладке. Ставится до записи задач: перерисуемся по ней,
+    // а сейчас со старым списком render() снял бы отметку как устаревшую
+    restMovedDay = readRestMoved();
+    if (!restMovedDay) render();
   }
 });
 

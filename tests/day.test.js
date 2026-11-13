@@ -83,9 +83,9 @@ test('нагрузка недели: 7 дней от сегодня, сегод�
   assert.equal(load[6].date, '2026-11-17');
 });
 
-test('приветствие по часу: границы 5, 12 и 18', () => {
+test('приветствие по часу: границы 5, 12, 18 и полночь', () => {
   assert.deepEqual([4, 5, 11, 12, 17, 18, 23, 0].map(greetingKey),
-    ['evening', 'morning', 'morning', 'afternoon', 'afternoon', 'evening', 'evening', 'evening']);
+    ['night', 'morning', 'morning', 'afternoon', 'afternoon', 'evening', 'evening', 'night']);
 });
 
 test('готовые по дням закрытия, свежие сверху', () => {
@@ -117,6 +117,9 @@ test('строка дня: ветки по порядку', async () => {
   assert.deepEqual(keys({ done: 3, total: 3, week: 9 }), ['status.allDone', 'status.rest', 'status.week']);
   // перенос на завтра не меняет строку, если на сегодня что-то осталось
   assert.deepEqual(keys({ open: 1, total: 1, restMoved: true }), ['status.planned']);
+  // часть сделана, остальное перенесено: не «всё сделано», а «сделано N, остальное на завтра»
+  assert.deepEqual(dayStatus({ all: 3, open: 0, done: 1, total: 1, suggestions: 2, week: 1, restMoved: true }),
+    [['status.doneSome', { n: 1 }], ['status.moved', {}]]);
 });
 
 test('блок «Можно взять»: скрыт, свёрнут после закрытия дня и вечернего переноса, открыт', async () => {

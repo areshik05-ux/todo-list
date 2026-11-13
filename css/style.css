@@ -131,7 +131,7 @@ kbd {
 .views { grid-area: views; }
 
 .brand-name {
-  font: 600 17px/24px var(--font-text);
+  font: 600 var(--fs-body)/24px var(--font-text);
   letter-spacing: -0.01em;
 }
 
@@ -165,7 +165,7 @@ kbd {
   background: var(--raised);
   overflow: hidden;
   color: var(--text);
-  font: 700 13px/1 var(--font-text);
+  font: 700 12px/1 var(--font-text);
   letter-spacing: -0.02em;
 }
 
@@ -333,7 +333,7 @@ kbd {
     height: 36px;
     padding: 0 10px;
     color: var(--text);
-    font-size: 15px;
+    font-size: var(--fs-body);
   }
 
   .view .view-icon {
@@ -626,7 +626,7 @@ h1 {
 
 @media (min-width: 640px) {
   .main { padding: 28px 24px 96px; }
-  h1 { font-size: 28px; }
+  h1 { font-size: var(--fs-h1); }
   .main-tools { width: auto; }
 
   .main {
@@ -900,7 +900,7 @@ h1 {
   height: 40px;
   padding: 0 16px;
   border-radius: var(--r-sm);
-  font-size: 15px;
+  font-size: var(--fs-body);
   font-weight: 600;
   white-space: nowrap;
   transition: background-color var(--dur-1) var(--ease-out), transform var(--dur-1) var(--spring-tap);
@@ -1358,9 +1358,19 @@ button.meta-due[aria-expanded="true"] {
   display: inline-flex;
   align-items: center;
   min-height: 24px;
+  max-width: 100%;
+  min-width: 0;
   margin: -3px 0;
   color: var(--text-2);
   text-decoration: none;
+}
+
+.meta-tag span {
+  min-width: 0;
+  overflow: hidden;
+  text-decoration: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .meta-tag:hover {
@@ -1926,7 +1936,7 @@ button.meta-due[aria-expanded="true"] {
   background: var(--toast-bg);
   color: var(--toast-text);
   box-shadow: var(--shadow-overlay);
-  font-size: 15px;
+  font-size: var(--fs-small);
   transform: translateX(-50%);
   animation: toast-in var(--dur-2) var(--ease-out);
 }
@@ -1941,6 +1951,32 @@ button.meta-due[aria-expanded="true"] {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* на телефоне сообщение переносится, до четырёх строк: дата и название видны целиком */
+@media (max-width: 639px) {
+  .toast {
+    width: calc(100% - 32px);
+    padding-block: 8px;
+  }
+
+  .toast-text {
+    display: -webkit-box;
+    flex: 1;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 4;
+    line-clamp: 4;
+  }
+}
+
+/* самый узкий экран: текст на всю ширину, кнопки строкой ниже справа */
+@media (max-width: 359px) {
+  .toast { flex-wrap: wrap; }
+  .toast-text { flex-basis: 100%; margin: 4px 0; }
+  .toast-undo,
+  .toast-undo[hidden] + .toast-close { margin-left: auto; }
 }
 
 .toast-undo {
@@ -2416,7 +2452,7 @@ button.meta-due[aria-expanded="true"] {
 
 .week-plus {
   color: var(--blue-ink);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   line-height: 8px;
 }
@@ -2456,7 +2492,7 @@ button.meta-due[aria-expanded="true"] {
   .leaf-num {
     margin-top: 5px;
     min-height: 0;
-    font-size: 30px;
+    font-size: 32px;
   }
 
   /* под числом месяц в родительном: «11 ноября» */
@@ -2464,7 +2500,7 @@ button.meta-due[aria-expanded="true"] {
     display: block;
     margin-top: 2px;
     color: var(--text-2);
-    font-size: 11px;
+    font-size: 12px;
     line-height: 14px;
   }
 
@@ -2773,7 +2809,7 @@ button.meta-due[aria-expanded="true"] {
   padding: 0 64px 0 50px;
   border: 0;
   background: transparent;
-  font-size: 18px;
+  font-size: var(--fs-body);
   outline: none;
 }
 
@@ -2888,10 +2924,15 @@ button.meta-due[aria-expanded="true"] {
     height: 44px;
   }
 
-  /* когда задачи уже есть, подсказка про быстрый ввод видна, пока человек пишет */
-  .main.has-tasks .compose:not(:focus-within) .hint:not(.is-error) {
+  /* когда задачи уже есть, подсказка про быстрый ввод видна, пока человек пишет.
+     До app.js о задачах знает boot.js (data-empty), чтобы поле не прыгало при загрузке */
+  :is(.main.has-tasks, :root:not([data-empty]) .main:not(.is-ready)) .compose:not(:focus-within) .hint:not(.is-error) {
     display: none;
   }
+
+  /* пустой список: кольцо сразу в виде «Свободный день», без скачка высоты */
+  [data-empty] .main:not(.is-ready) .ring-box :is(.ring, .ring-count) { display: none; }
+  [data-empty] .main:not(.is-ready) .ring-word { display: block; min-height: 32px; }
 }
 
 @media (max-width: 359px) {
@@ -2911,9 +2952,11 @@ button.meta-due[aria-expanded="true"] {
   .composer .btn-primary { padding: 0 12px; }
 }
 
-@media (pointer: coarse) and (max-width: 360px) {
-  /* ручку перетаскивания на самом узком телефоне прячем: название получает место */
-  .handle { display: none; }
+@media (max-width: 479px) {
+  /* телефон: ручки нет (порядок меняют Alt и стрелки), «Изменить» живёт в меню «⋯»,
+     так название получает около 240 px вместо 150 */
+  .handle,
+  .todo-edit { display: none; }
   .todo { padding-left: 6px; }
 }
 
@@ -2998,7 +3041,7 @@ button.meta-due[aria-expanded="true"] {
 }
 
 .not-found h1 {
-  font: 700 28px/36px var(--font-display);
+  font: 700 var(--fs-h1)/40px var(--font-display);
 }
 
 .not-found p {

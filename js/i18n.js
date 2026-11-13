@@ -35,8 +35,6 @@ const ru = {
   'group.overdue': 'С прошлых дней',
   'task.edit': 'Изменить',
   'task.editLabel': 'Изменить: {title}',
-  'task.delete': 'Удалить',
-  'task.deleteLabel': 'Удалить: {title}',
   'task.move': 'Переместить: {title}. Перетащите или нажмите Alt и стрелку вверх или вниз',
   'task.moved': 'Перемещено: {pos} из {total}',
   'task.overdue': 'просрочено',
@@ -99,7 +97,7 @@ const ru = {
   'repeat.month': 'Каждый месяц',
   'repeat.year': 'Каждый год',
   'task.more': 'Ещё',
-  'task.moreLabel': 'Срок и удаление: {title}',
+  'task.moreLabel': 'Действия: {title}',
   'menu.today': 'На сегодня',
   'menu.tomorrow': 'На завтра',
   'menu.nextWeek': 'На следующую неделю',
@@ -108,7 +106,7 @@ const ru = {
   'toast.rescheduled': 'Перенесено на {when}: «{title}»',
   'toast.undated': 'Срок убран: «{title}»',
   'toast.movedToday': { one: '{n} задача перенесена на сегодня', few: '{n} задачи перенесены на сегодня', many: '{n} задач перенесено на сегодня', other: '{n} задачи перенесено на сегодня' },
-  'toast.completedNext': 'Готово: «{title}». Следующий раз: {when}',
+  'toast.completedNext': 'Следующий раз {when}. Готово: «{title}»',
   'help.reschedule': 'На сегодня или на завтра (фокус на задаче)',
   'help.quick': 'Быстрый ввод',
   'help.keys': 'Клавиши',
@@ -137,7 +135,7 @@ const ru = {
   'editor.stepsHint': 'можно вставить список, каждая строка станет шагом',
   'editor.notesHint': 'ссылки, адреса, подробности',
   'menu.pick': 'Выбрать дату…',
-  'menu.label': 'Перенести или удалить: {title}',
+  'menu.label': 'Действия: {title}',
   'overdue.moveAll': 'Перенести всё на сегодня',
   'toast.allSteps': 'Все шаги готовы. Отметить задачу?',
   'toast.markDone': 'Отметить',
@@ -159,6 +157,7 @@ const ru = {
   'footer.code': 'код на GitHub',
   'skip': 'К новой задаче',
   'add.empty': 'Сначала напишите задачу',
+  'add.cut': 'Название длиннее {n} символов: продолжение перенесено в заметку.',
   'steps.limit': 'В задаче может быть до {n} шагов. Не влезло строк: {m}.',
   'toast.reopened': 'Снова в работе: «{title}»',
   'steps.full': 'В задаче уже {n} шагов, больше не добавить.',
@@ -172,6 +171,7 @@ const ru = {
   'greeting.morning': 'Доброе утро',
   'greeting.afternoon': 'Добрый день',
   'greeting.evening': 'Добрый вечер',
+  'greeting.night': 'Доброй ночи',
   'status.empty': 'Список пока пуст. Запишите, что держите в голове: одна строка и Enter.',
   'status.pick': 'На сегодня пока ничего. Возьмите задачу из списка ниже или добавьте новую.',
   'status.free': 'Сегодня свободно. Если что-то появится, запишите сюда.',
@@ -179,10 +179,10 @@ const ru = {
   'status.progress': 'Сделано {done} из {total}. Осталось: {left}.',
   'status.rest': 'Можно отдохнуть.',
   'status.allDone': 'Всё на сегодня сделано: {done} из {total}.',
+  'status.doneSome': 'Сделано сегодня: {n}.',
   'status.moved': 'Остальное перенесено на завтра. Можно отдохнуть.',
   'status.week': 'За эту неделю сделано: {n}.',
   'status.full': 'Если это много, часть можно перенести на завтра.',
-  'ring.label': 'Сделано {done} из {total}',
   'plan.title': 'Можно взять на сегодня',
   'plan.take': 'На сегодня',
   'plan.takeLabel': 'Взять на сегодня: «{title}»',
@@ -292,8 +292,6 @@ const en = {
   'group.overdue': 'From earlier days',
   'task.edit': 'Edit',
   'task.editLabel': 'Edit: {title}',
-  'task.delete': 'Delete',
-  'task.deleteLabel': 'Delete: {title}',
   'task.move': 'Move: {title}. Drag, or press Alt and the up or down arrow',
   'task.moved': 'Moved: {pos} of {total}',
   'task.overdue': 'overdue',
@@ -356,7 +354,7 @@ const en = {
   'repeat.month': 'Every month',
   'repeat.year': 'Every year',
   'task.more': 'More',
-  'task.moreLabel': 'Due date and delete: {title}',
+  'task.moreLabel': 'Actions: {title}',
   'menu.today': 'Today',
   'menu.tomorrow': 'Tomorrow',
   'menu.nextWeek': 'Next week',
@@ -365,7 +363,7 @@ const en = {
   'toast.rescheduled': 'Moved to {when}: “{title}”',
   'toast.undated': 'Date removed: “{title}”',
   'toast.movedToday': { one: '{n} task moved to today', other: '{n} tasks moved to today' },
-  'toast.completedNext': 'Done: “{title}”. Next time: {when}',
+  'toast.completedNext': 'Next time {when}. Done: “{title}”',
   'help.reschedule': 'Today or tomorrow (when focused)',
   'help.quick': 'Quick add',
   'help.keys': 'Keys',
@@ -376,7 +374,7 @@ const en = {
   'help.qPriority': 'Priority',
   'help.qTag': 'Tag',
   'help.qTagEx': '#work',
-  'help.qUndo': 'A word was picked up by mistake: the × on its chip under the field',
+  'help.qUndo': 'Wrong word picked up? Press × on its chip under the field',
   'repeat.on1': 'Every Monday',
   'repeat.on2': 'Every Tuesday',
   'repeat.on3': 'Every Wednesday',
@@ -394,7 +392,7 @@ const en = {
   'editor.stepsHint': 'paste a list, each line becomes a step',
   'editor.notesHint': 'links, addresses, details',
   'menu.pick': 'Pick a date…',
-  'menu.label': 'Reschedule or delete: {title}',
+  'menu.label': 'Actions: {title}',
   'overdue.moveAll': 'Move all to today',
   'toast.allSteps': 'All steps done. Mark the task done?',
   'toast.markDone': 'Mark done',
@@ -416,6 +414,7 @@ const en = {
   'footer.code': 'code on GitHub',
   'skip': 'Skip to new task',
   'add.empty': 'Type a task first',
+  'add.cut': 'The title is longer than {n} characters: the rest is moved to the note.',
   'steps.limit': 'A task can have up to {n} steps. Lines that didn’t fit: {m}.',
   'toast.reopened': 'Back to open: “{title}”',
   'steps.full': 'This task already has {n} steps, no more can be added.',
@@ -429,6 +428,7 @@ const en = {
   'greeting.morning': 'Good morning',
   'greeting.afternoon': 'Good afternoon',
   'greeting.evening': 'Good evening',
+  'greeting.night': 'Good night',
   'status.empty': 'Your list is empty for now. Write down what’s on your mind: one line, then Enter.',
   'status.pick': 'Nothing planned for today yet. Take a task from the list below or add a new one.',
   'status.free': 'Today is free. If something comes up, add it here.',
@@ -436,10 +436,10 @@ const en = {
   'status.progress': '{done} of {total} done. {left} left.',
   'status.rest': 'Time to rest.',
   'status.allDone': 'All done for today: {done} of {total}.',
+  'status.doneSome': 'Done today: {n}.',
   'status.moved': 'The rest is moved to tomorrow. Time to rest.',
   'status.week': 'Done this week: {n}.',
   'status.full': 'If that’s a lot, move some to tomorrow.',
-  'ring.label': '{done} of {total} done',
   'plan.title': 'Pick for today',
   'plan.take': 'Today',
   'plan.takeLabel': 'Do today: “{title}”',
@@ -530,7 +530,19 @@ export function detectLang(languages = globalThis.navigator?.languages ?? []) {
   return 'en';
 }
 
-const fill = (text, params) => text.replace(/\{(\w+)\}/g, (_, k) => (k in params ? String(params[k]) : `{${k}}`));
+// «{date}.» с датой «20 нояб.» дало бы две точки подряд: вторую не ставим
+const fill = (text, params) => text.replace(/\{(\w+)\}(\.?)/g, (_, k, dot) => {
+  if (!(k in params)) return `{${k}}${dot}`;
+  const value = String(params[k]);
+  return dot && value.endsWith('.') ? value : value + dot;
+});
+
+// Короткие русские слова (и, в, на, по…) не остаются в конце строки:
+// неразрывный пробел привязывает их к следующему слову. Только в шаблоне, не в названиях задач.
+const SHORT_WORD = /(?<![\p{L}\p{N}_-])([а-яё]{1,2}|без|для|при|или|над|под|про|обо) /giu;
+export const bindShortWords = (text) => text.replace(SHORT_WORD, (_, word) => `${word} `);
+// ключевые слова поиска и тексты примеров попадают в данные и в поле ввода: их не трогаем
+const KEEP_SPACES = /^(?:palette\.kw\.|sample\.|example\.\d)/;
 
 export function createI18n(lang) {
   const dict = DICTS[lang] ?? DICTS.en;
@@ -542,6 +554,7 @@ export function createI18n(lang) {
     if (typeof entry === 'object') {
       entry = entry[rules.select(params.n ?? 0)] ?? entry.other;
     }
+    if (lang === 'ru' && !KEEP_SPACES.test(key)) entry = bindShortWords(entry);
     return fill(entry, params);
   }
 
@@ -569,7 +582,7 @@ export function createI18n(lang) {
     return withYear(key, today, trimDot(dayMonth.format(date)));
   }
 
-  // Заголовок группы в «Предстоящих»: «Завтра · чт, 12 нояб.»
+  // Заголовок группы в «Планах»: «Завтра · чт, 12 нояб.»
   function groupDate(key, today) {
     const date = fromKey(key);
     const diff = daysBetween(today, key);
@@ -581,7 +594,7 @@ export function createI18n(lang) {
 
   const longDate = (date) => cap(long.format(date));
 
-  // Короткая дата для меню переноса: «ср, 11 нояб», «Wed, 11 Nov»
+  // Короткая дата для меню переноса: «ср, 11 нояб.», «Wed, 11 Nov»
   const shortDate = (key) => {
     const date = fromKey(key);
     return `${weekdayShort.format(date)}, ${trimDot(dayMonth.format(date))}`;

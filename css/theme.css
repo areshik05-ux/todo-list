@@ -72,7 +72,7 @@
   --shadow-overlay: 0 2px 6px rgb(18 23 34 / 0.06), 0 16px 40px rgb(18 23 34 / 0.16);
 
   /* форма: kbd и мелкие кнопки, поля и строки, карточки и меню, листок и окна */
-  --r-xs: 6px;
+  --r-xs: 8px;
   --r-sm: 8px;
   --r-md: 12px;
   --r-lg: 16px;
@@ -81,7 +81,7 @@
   /* шрифты: Geologica только от 20 px (число на листке, заголовки), Onest для текста */
   --font-display: "Geologica", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
   --font-text: "Onest", "Segoe UI Variable Text", "Segoe UI", -apple-system, system-ui, sans-serif;
-  --fs-meta: 0.8125rem;  /* 13: строка срока, счётчики */
+  --fs-meta: 0.75rem;    /* 12: строка срока, счётчики */
   --fs-small: 0.875rem;  /* 14: подписи, боковая панель */
   --fs-body: 1rem;       /* 16: задачи и основной текст */
   --fs-h3: 1.25rem;      /* 20 */

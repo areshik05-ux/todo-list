@@ -77,7 +77,36 @@ test('метки: кириллица, дубли, лимит, решётка в�
   assert.equal(p('a #Работа #работа').tokens.length, 1);
   assert.deepEqual(p('Книга по C# #dev').tags, ['dev']);
   assert.equal(p('Книга по C# #dev').title, 'Книга по C#');
-  assert.equal(p('x #1 #2 #3 #4 #5 #6').tags.length, 5);
+  assert.equal(p('x #a1 #a2 #a3 #a4 #a5 #a6').tags.length, 5);
+});
+
+test('метка без букв не метка: «Issue #42»', () => {
+  const r = p('Issue #42 fix');
+  assert.deepEqual([r.title, r.tags], ['Issue #42 fix', []]);
+  assert.deepEqual(p('Ревью #2026_q4').tags, ['2026_q4']);
+});
+
+test('«на завтра», «на сегодня», «на 25 ноября», «на 25.11»: предлог уходит вместе со сроком', () => {
+  const cases = {
+    'Купить хлеб на завтра': ['Купить хлеб', '2026-11-11'],
+    'Список дел на сегодня': ['Список дел', '2026-11-10'],
+    'Билеты на 25 ноября': ['Билеты', '2026-11-25'],
+    'Перенести встречу на 25.11': ['Перенести встречу', '2026-11-25'],
+    'Встреча на пятницу': ['Встреча', '2026-11-13'],
+    'Отпуск с 25.12 по 05.01': ['Отпуск с 25.12 по 05.01', '2026-12-25'],
+  };
+  for (const [text, [title, due]] of Object.entries(cases)) assert.deepEqual([p(text).title, p(text).due], [title, due], text);
+  assert.equal(p('Отпуск с 25.12 по 05.01').tokens[0].text, 'с 25.12 по 05.01');
+  const off = parseQuickAdd('Отпуск с 25.12 по 05.01', TODAY, { ignore: ['с 25.12 по 05.01'] });
+  assert.deepEqual([off.title, off.due], ['Отпуск с 25.12 по 05.01', null], 'крестик на диапазоне снимает и даты внутри');
+  assert.equal(p('Настроить среду разработки').due, null);
+});
+
+test('число с единицей не дата: «2.10 кг»', () => {
+  for (const text of ['Купить 2.10 кг яблок', 'Сыр 0.10кг', 'Бензин 1.10 л', 'Pay 5.50 $']) {
+    assert.deepEqual([p(text).due, p(text).title], [null, text], text);
+  }
+  assert.equal(p('Сдать 2.10').due, '2027-10-02');
 });
 
 test('строка из одних служебных слов остаётся названием', () => {
