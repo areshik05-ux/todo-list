@@ -36,13 +36,17 @@
   --pink-tint: #fdebf2;   /* фон: закрытый день, флажок P1 в карточке фокуса, выбранный чип */
   --on-pink: #ffffff;
 
+  /* линия основного цвета: фокус, дуга кольца, рамки при наведении. У кобальта = заливка,
+     у светлых пастельных цветов темнее заливки, чтобы держать 3:1 к белому */
+  --accent-line: var(--blue);
+
   /* старые имена (на них написан style.css) */
   --accent: var(--blue);
   --accent-hover: var(--blue-hover);
   --accent-ink: var(--blue-ink);
   --on-accent: var(--on-blue);
   --tint: var(--blue-tint);
-  --focus: var(--blue);   /* кольцо фокуса: 5.73 surface, 5.29 bg, 5.00 blue-tint */
+  --focus: var(--accent-line); /* кольцо фокуса: 5.73 surface, 5.29 bg, 5.00 blue-tint */
 
   /* смысловые */
   --p1: var(--pink-ink);  /* приоритет 1 = розовый (красный рядом с розовым неотличим: 1.04) */
@@ -55,9 +59,9 @@
 
   /* кольцо и графики дня/недели */
   --ring-track: var(--line);   /* дорожка (декор); дуга к ней: голубая 4.57, розовая 3.72 */
-  --ring-fill: var(--blue);    /* дуга прогресса */
+  --ring-fill: var(--accent-line); /* дуга прогресса */
   --ring-full: var(--pink);    /* кольцо, когда день закрыт */
-  --chart-1: var(--blue);      /* сделано / основной ряд: 5.73 surface */
+  --chart-1: var(--accent-line); /* сделано / основной ряд: 5.73 surface */
   --chart-2: var(--pink);      /* важное (P1) / акцентный ряд: 4.66 surface */
   --chart-3: #8a93a2;          /* остальное / план: 3.10 surface */
   --chart-grid: var(--line);   /* сетка (декор) */
@@ -189,4 +193,202 @@
 
   --shadow-raised: 0 0 0 1px var(--line);
   --shadow-overlay: 0 0 0 1px #2f3644, 0 16px 40px rgb(0 0 0 / 0.55);
+}
+
+/* Цвет приложения (окно «Оформление»). Кобальт выше, без атрибута; здесь остальные шесть пар.
+   --blue = основной цвет (кнопка, полоса листка), --accent-line = линия (фокус, кольцо),
+   --blue-ink = текст цветом, --pink = второй цвет пары (галочка, P1, закрытый день).
+   У светлых заливок (Небо, Зефир, Мята, Коралл, Сирень) текст на кнопке почти чёрный.
+   Контраст каждой пары в обеих темах проверяет tests/contrast.test.js. */
+
+/* Небо */
+:root[data-accent="sky"] {
+  --blue: #45a9ed;
+  --blue-hover: #269cea;
+  --on-blue: #0a1c29;
+  --accent-line: #1170b0;
+  --blue-ink: #0f649c;
+  --blue-tint: #e4f2fa;
+  --mark: #c9e4f5;
+  --toast-action: #63bbf7;
+  --pink: #e52e78;
+  --pink-hover: #d01a62;
+  --on-pink: #ffffff;
+  --pink-ink: #b01654;
+  --pink-tint: #fbebf2;
+}
+:root[data-theme="dark"][data-accent="sky"] {
+  --blue: #4eaeed;
+  --blue-hover: #76c0f1;
+  --on-blue: #0a1c29;
+  --accent-line: #4eaeed;
+  --blue-ink: #8ecbf4;
+  --blue-tint: #172b39;
+  --mark: #214257;
+  --toast-action: #0d639d;
+  --pink: #ef7eab;
+  --pink-hover: #f39bbe;
+  --on-pink: #370e1e;
+  --pink-ink: #f4a4c4;
+  --pink-tint: #401c2a;
+}
+
+/* Зефир */
+:root[data-accent="marshmallow"] {
+  --blue: #f07caf;
+  --blue-hover: #ee65a0;
+  --on-blue: #340d1e;
+  --accent-line: #d01767;
+  --blue-ink: #b8145c;
+  --blue-tint: #fbebf2;
+  --mark: #f8d6e5;
+  --toast-action: #f993c0;
+  --pink: #1780cf;
+  --pink-hover: #146fb5;
+  --on-pink: #ffffff;
+  --pink-ink: #115f9a;
+  --pink-tint: #e5f1fa;
+}
+:root[data-theme="dark"][data-accent="marshmallow"] {
+  --blue: #f182b2;
+  --blue-hover: #f49fc4;
+  --on-blue: #340d1e;
+  --accent-line: #f182b2;
+  --blue-ink: #f6afce;
+  --blue-tint: #431b2d;
+  --mark: #682744;
+  --toast-action: #b90f59;
+  --pink: #51a9ec;
+  --pink-hover: #77bcf0;
+  --on-pink: #0b1e2d;
+  --pink-ink: #85c2f1;
+  --pink-tint: #182a37;
+}
+
+/* Мята */
+:root[data-accent="mint"] {
+  --blue: #2bb68d;
+  --blue-hover: #27a881;
+  --on-blue: #081f18;
+  --accent-line: #1d7a5e;
+  --blue-ink: #196b53;
+  --blue-tint: #d3f7ed;
+  --mark: #a1eed7;
+  --toast-action: #0bcc92;
+  --pink: #e4375a;
+  --pink-hover: #d31d41;
+  --on-pink: #ffffff;
+  --pink-ink: #b31837;
+  --pink-tint: #fcebef;
+}
+:root[data-theme="dark"][data-accent="mint"] {
+  --blue: #2cbb90;
+  --blue-hover: #34cfa1;
+  --on-blue: #081f18;
+  --accent-line: #2cbb90;
+  --blue-ink: #5bd8b3;
+  --blue-tint: #132d25;
+  --mark: #1a4639;
+  --toast-action: #096c4f;
+  --pink: #ee8096;
+  --pink-hover: #f29cae;
+  --on-pink: #370e16;
+  --pink-ink: #f3a7b6;
+  --pink-tint: #421c24;
+}
+
+/* Коралл */
+:root[data-accent="coral"] {
+  --blue: #f38266;
+  --blue-hover: #f16d4b;
+  --on-blue: #2f130c;
+  --accent-line: #ca340f;
+  --blue-ink: #b32e0d;
+  --blue-tint: #fbece9;
+  --mark: #f7d9d1;
+  --toast-action: #f89b83;
+  --pink: #307bdd;
+  --pink-hover: #216bcb;
+  --on-pink: #ffffff;
+  --pink-ink: #1c5aac;
+  --pink-tint: #e8f1fb;
+}
+:root[data-theme="dark"][data-accent="coral"] {
+  --blue: #f4886e;
+  --blue-hover: #f7a38f;
+  --on-blue: #2f130c;
+  --accent-line: #f4886e;
+  --blue-ink: #f8b4a2;
+  --blue-tint: #3e211a;
+  --mark: #603125;
+  --toast-action: #b22f0e;
+  --pink: #71a4e8;
+  --pink-hover: #8fb8ed;
+  --on-pink: #0d1d32;
+  --pink-ink: #9abfef;
+  --pink-tint: #1a283c;
+}
+
+/* Сирень */
+:root[data-accent="lilac"] {
+  --blue: #b391ec;
+  --blue-hover: #a781e9;
+  --on-blue: #221042;
+  --accent-line: #814adf;
+  --blue-ink: #7336dc;
+  --blue-tint: #f3edfc;
+  --mark: #e6daf9;
+  --toast-action: #c3a4fa;
+  --pink: #e13a66;
+  --pink-hover: #d01f4e;
+  --on-pink: #ffffff;
+  --pink-ink: #b11a43;
+  --pink-tint: #fcebf0;
+}
+:root[data-theme="dark"][data-accent="lilac"] {
+  --blue: #b697ed;
+  --blue-hover: #c5adf0;
+  --on-blue: #221042;
+  --accent-line: #b697ed;
+  --blue-ink: #cfbbf3;
+  --blue-tint: #30204e;
+  --mark: #4a2e79;
+  --toast-action: #732bee;
+  --pink: #ec819e;
+  --pink-hover: #f09db4;
+  --on-pink: #370e19;
+  --pink-ink: #f2a6bb;
+  --pink-tint: #421c26;
+}
+
+/* Графит */
+:root[data-accent="graphite"] {
+  --blue: #525e71;
+  --blue-hover: #444e5e;
+  --on-blue: #ffffff;
+  --accent-line: #525e71;
+  --blue-ink: #485364;
+  --blue-tint: #edeff2;
+  --mark: #dfe2e9;
+  --toast-action: #b2bdce;
+  --pink: #d6306e;
+  --pink-hover: #bb2660;
+  --on-pink: #ffffff;
+  --pink-ink: #b0245b;
+  --pink-tint: #fdebf2;
+}
+:root[data-theme="dark"][data-accent="graphite"] {
+  --blue: #a5aebe;
+  --blue-hover: #b8bfcc;
+  --on-blue: #131d2d;
+  --accent-line: #a5aebe;
+  --blue-ink: #bfc6d1;
+  --blue-tint: #272b34;
+  --mark: #353f4f;
+  --toast-action: #4f5a6c;
+  --pink: #ff7aa9;
+  --pink-hover: #ff97bc;
+  --on-pink: #2a0615;
+  --pink-ink: #ffa3c3;
+  --pink-tint: #3a1828;
 }

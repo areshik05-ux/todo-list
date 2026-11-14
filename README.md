@@ -16,7 +16,7 @@
 - **«Сегодня» как главный экран**: приветствие по времени суток, дата и одна фраза про день («На сегодня 3 задачи», «Сделано 2 из 5. Осталось: 3»). Рядом листок календаря с числом, кольцо прогресса и неделя вперёд: точки под днями показывают, сколько задач на каждый, клик по дню открывает «Планы» на этой дате. Даже с одной задачей на экране есть день, а не пустота;
 - **«Можно взять на сегодня»**: задачи без срока и на ближайшую неделю, по три штуки, одна кнопка «На сегодня» у каждой. Если на сегодня уже 6 задач, список честно говорит, что это много, и ничего больше не предлагает;
 - **день закрыт**: когда отмечена последняя задача дня, кольцо замыкается, листок «отрывается» (один раз за день, без конфетти и звуков), и можно спокойно отдохнуть. Вечером, с 18:00, есть «Перенести оставшиеся на завтра»;
-- **команды по Ctrl+K (⌘K)**: перейти в раздел, найти задачу по названию, сменить тему или язык, скачать задачи, не трогая мышь;
+- **команды по Ctrl+K (⌘K)**: перейти в раздел, найти задачу по названию, сменить тему, цвет или язык, скачать задачи, не трогая мышь. «Цвет: Небо» и «Тема: тёмная» работают без окна выбора;
 - **в календарь**: у задачи со сроком в меню «⋯» есть «В календарь». Скачивается файл, календарь телефона или компьютера сам напомнит в 9:00, повторы переносятся тоже. Так у списка в браузере есть напоминания без сервера и без запроса на уведомления;
 - **установка как приложение**: пункт «Установить как приложение» появляется, когда браузер это умеет; на иконке приложения долгим нажатием есть «Новая задача», «Сегодня», «Все задачи»;
 - **задачи не потеряются**: браузер просят не стирать данные сайта, а если копии не было две недели, в меню появляется тихое напоминание скачать файл;
@@ -35,7 +35,9 @@
 - **справка «Быстрый ввод и клавиши»** (кнопка «?» или клавиша `?`): все примеры быстрого ввода и горячие клавиши N, /, 1–4, J/K, X, E, T, M, Del (на Mac ⌫);
 - **работает без интернета**: после первого визита страница открывается и офлайн, её можно установить на телефон как приложение;
 - **русский и английский** интерфейс: язык берётся из браузера, переключается кнопками RU / EN, меняются все подписи, даты, склонения («1 задача, 2 задачи, 5 задач») и `lang` у страницы;
-- **светлая тема** основная (белая, с голубым и розовым), тёмная включается кнопкой, выбор запоминается. Шрифты Geologica и Onest лежат вместе с сайтом;
+- **свой цвет приложения**: кнопка с палитрой открывает «Оформление». Там тема (светлая, тёмная или как в системе) и семь цветов: Кобальт (голубой, по умолчанию), Небо, Зефир, Мята, Коралл, Сирень, Графит. Каждый цвет это пара: основной красит кнопки, выбранный раздел и кольцо, второй достаётся галочке, P1 и закрытому дню, поэтому в розовом Зефире P1 и галочка голубые и ничего не сливается. Выбор применяется сразу, без «Сохранить», ставится до первой отрисовки (страница не мигает голубым), попадает в файл копии и в соседнюю вкладку. Окно работает со стрелок, Esc возвращает на кнопку. Контраст всех семи цветов в обеих темах проверяет тест, а не глаз;
+- **значки разделов в цвет**: у «Сегодня», «Планов» и «Всех» значки основного цвета, у «Готово» второго, как галочка. Без цветных подложек, выбранный раздел всё равно заметнее остальных;
+- **светлая тема** основная (белая, с голубым и розовым), тёмная включается в «Оформлении» за два нажатия, выбор запоминается. Шрифты Geologica и Onest лежат вместе с сайтом;
 - **скачать задачи в JSON и загрузить обратно**; если список открыт в двух вкладках, изменения в одной сразу видны в другой.
 
 Задачи из первой и второй версий сайта при первом открытии переносятся в новый формат, ничего не теряется.
@@ -71,9 +73,10 @@ npm test
 
 ```
 index.html            разметка, иконки и шаблоны строки задачи, редактора и меню
-css/theme.css         цвета обеих тем, размеры, шрифты (fonts/: Geologica и Onest, лицензия OFL)
+css/theme.css         цвета обеих тем и семи цветов приложения, размеры, шрифты (fonts/: Geologica и Onest, лицензия OFL)
 css/style.css         раскладка и компоненты
-js/boot.js            ставит тему и язык до отрисовки, чтобы страница не мигала
+js/boot.js            ставит тему, цвет и язык до отрисовки, чтобы страница не мигала
+js/accents.js         список цветов приложения и проверка выбора
 js/app.js             работа со страницей: события, отрисовка, фокус, клавиши, меню, перетаскивание
 js/todos.js           логика списка: разделы, шаги, повторы, перенос, поиск, сортировка, перестановка
 js/repeat.js          следующий срок повторяющейся задачи
@@ -125,4 +128,4 @@ netlify.toml          настройки Netlify: тесты перед выкл
 
 ## English
 
-A to-do list in plain HTML, CSS and JavaScript (ES modules, no build, no dependencies). Today is the home screen: a greeting, one sentence about the day, a calendar leaf with the date, a progress ring and the next 7 days; “Pick for today” suggests undated and near tasks, the day closes with a calm moment, Ctrl/Cmd+K opens commands, tasks can go to your calendar as .ics. Natural-language quick add in English and Russian (“Call the bank tomorrow !1 #errands”, “Stand-up every monday”), recurring tasks, steps and notes inside a task, two-click rescheduling, “move all overdue to today”, views Today / Upcoming / All / Done, priorities, tags, search, sorting, drag-and-drop with a keyboard alternative, shortcuts, undo, JSON export and import, first-visit examples, offline support (service worker), light and dark themes, RU/EN interface. Data stays in localStorage. Run `npm start` to serve it and `npm test` for the tests. Built with Claude Code, with research-backed design, UX-psychology and judge agents.
+A to-do list in plain HTML, CSS and JavaScript (ES modules, no build, no dependencies). Today is the home screen: a greeting, one sentence about the day, a calendar leaf with the date, a progress ring and the next 7 days; “Pick for today” suggests undated and near tasks, the day closes with a calm moment, Ctrl/Cmd+K opens commands, tasks can go to your calendar as .ics. Natural-language quick add in English and Russian (“Call the bank tomorrow !1 #errands”, “Stand-up every monday”), recurring tasks, steps and notes inside a task, two-click rescheduling, “move all overdue to today”, views Today / Upcoming / All / Done, priorities, tags, search, sorting, drag-and-drop with a keyboard alternative, shortcuts, undo, JSON export and import, first-visit examples, offline support (service worker), light and dark themes with seven app colours (Cobalt by default, Sky, Marshmallow, Mint, Coral, Lilac, Graphite; each is a pair, so P1 and the done tick never blend into the main colour), RU/EN interface. Data stays in localStorage. Run `npm start` to serve it and `npm test` for the tests. Built with Claude Code, with research-backed design, UX-psychology and judge agents.

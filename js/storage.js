@@ -2,6 +2,7 @@ import { normalizeTitle, normalizeNotes, normalizeSteps, PRIORITIES } from './to
 import { isRepeat, isRepeatDay, repeatDayFor } from './repeat.js';
 import { isDateKey } from './dates.js';
 import { normalizeTags } from './parse.js';
+import { cleanAccent, isAccent, DEFAULT_ACCENT } from './accents.js';
 
 export const STORAGE_KEY = 'todo-list:v2';
 export const LEGACY_KEY = 'todo-list:v1';
@@ -168,10 +169,10 @@ export function saveTodos(todos, storage) {
   }
 }
 
-/* Настройки: язык, тема, сортировка, свёрнутые предложения, день, когда оторвали листок */
+/* Настройки: язык, тема, цвет приложения, сортировка, свёрнутые предложения, день, когда оторвали листок */
 
 // theme: null, пока человек не выбрал сам: тогда тема как в системе
-export const DEFAULT_SETTINGS = { lang: null, theme: null, sort: 'manual', planFolded: false, closedDay: null };
+export const DEFAULT_SETTINGS = { lang: null, theme: null, accent: DEFAULT_ACCENT, sort: 'manual', planFolded: false, closedDay: null };
 
 export function parseSettings(raw) {
   try {
@@ -179,6 +180,8 @@ export function parseSettings(raw) {
     return {
       lang: ['ru', 'en'].includes(data.lang) ? data.lang : null,
       theme: ['light', 'dark'].includes(data.theme) ? data.theme : null,
+      // настройки до v5 цвета не знают: у них кобальт, как и было
+      accent: cleanAccent(data.accent),
       sort: ['manual', 'due', 'priority'].includes(data.sort) ? data.sort : 'manual',
       planFolded: data.planFolded === true,
       closedDay: isDateKey(data.closedDay) ? data.closedDay : null,
@@ -207,8 +210,24 @@ export function saveSettings(settings, storage) {
 
 /* Экспорт и импорт */
 
-export function exportJSON(todos, now = new Date()) {
-  return JSON.stringify({ app: 'todo-list', version: DATA_VERSION, exportedAt: now.toISOString(), todos }, null, 2);
+// prefs: оформление, которое едет вместе с задачами (цвет приложения), чтобы копия
+// на другом компьютере выглядела так же. Старые файлы без него читаются как раньше.
+export function exportJSON(todos, now = new Date(), prefs = null) {
+  const settings = prefs ? exportPrefs(prefs) : undefined;
+  return JSON.stringify({ app: 'todo-list', version: DATA_VERSION, exportedAt: now.toISOString(), todos, ...(settings ? { settings } : {}) }, null, 2);
+}
+
+function exportPrefs(prefs) {
+  return { accent: cleanAccent(prefs.accent) };
+}
+
+// Из файла берём только то, что знаем и что прошло проверку.
+function importPrefs(data) {
+  const raw = data && typeof data === 'object' && !Array.isArray(data) ? data.settings : null;
+  if (!raw || typeof raw !== 'object') return null;
+  const out = {};
+  if (isAccent(raw.accent)) out.accent = raw.accent;
+  return Object.keys(out).length ? out : null;
 }
 
 // Импортированные задачи заменяют задачи с тем же id, новые встают сверху.
@@ -223,5 +242,5 @@ export function importJSON(text, current) {
   const incoming = cleanList(Array.isArray(data) ? data : data?.todos);
   if (!incoming.length) return null;
   const ids = new Set(incoming.map((t) => t.id));
-  return { todos: [...incoming, ...current.filter((t) => !ids.has(t.id))], count: incoming.length };
+  return { todos: [...incoming, ...current.filter((t) => !ids.has(t.id))], count: incoming.length, prefs: importPrefs(data) };
 }

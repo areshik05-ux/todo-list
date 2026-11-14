@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  loadTodos, saveTodos, parseTodos, loadSettings, saveSettings, parseSettings,
+  loadTodos, saveTodos, parseTodos, loadSettings, saveSettings, parseSettings, DEFAULT_SETTINGS,
   exportJSON, importJSON, storageAvailable, isFirstVisit, loadTodosReport, STORAGE_KEY, LEGACY_KEY, BACKUP_KEY,
 } from '../js/storage.js';
 
@@ -80,7 +80,7 @@ test('из списка берутся только валидные задач�
 test('запрещённое хранилище: пустой список и сигнал о неудаче записи', () => {
   assert.deepEqual(loadTodos(brokenStorage), []);
   assert.equal(saveTodos([full('a')], brokenStorage), false);
-  assert.deepEqual(loadSettings(brokenStorage), { lang: null, theme: null, sort: 'manual', planFolded: false, closedDay: null });
+  assert.deepEqual(loadSettings(brokenStorage), BASE);
   assert.equal(saveSettings({}, brokenStorage), false);
   assert.equal(storageAvailable(brokenStorage), false);
   assert.equal(storageAvailable(memoryStorage()), true);
@@ -96,21 +96,48 @@ test('запрет на само обращение к localStorage (Chrome бе
     assert.deepEqual(loadTodos(), []);
     assert.equal(saveTodos([]), false);
     assert.equal(storageAvailable(), false);
-    assert.deepEqual(loadSettings(), { lang: null, theme: null, sort: 'manual', planFolded: false, closedDay: null });
+    assert.deepEqual(loadSettings(), BASE);
   } finally {
     if (original) Object.defineProperty(globalThis, 'localStorage', original);
     else delete globalThis.localStorage;
   }
 });
 
+// настройки по умолчанию (как DEFAULT_SETTINGS), с ними сравниваются разобранные
+const BASE = { lang: null, theme: null, accent: 'cobalt', sort: 'manual', planFolded: false, closedDay: null };
+
 test('настройки: неизвестные значения заменяются на значения по умолчанию', () => {
-  assert.deepEqual(parseSettings('{"lang":"en","theme":"dark","sort":"due"}'), { lang: 'en', theme: 'dark', sort: 'due', planFolded: false, closedDay: null });
-  assert.deepEqual(parseSettings('{"lang":"de","theme":"pink","sort":"x"}'), { lang: null, theme: null, sort: 'manual', planFolded: false, closedDay: null });
-  assert.deepEqual(parseSettings('{"planFolded":true,"closedDay":"2026-11-11"}'),
-    { lang: null, theme: null, sort: 'manual', planFolded: true, closedDay: '2026-11-11' });
-  assert.deepEqual(parseSettings('{"planFolded":"yes","closedDay":"вчера"}'),
-    { lang: null, theme: null, sort: 'manual', planFolded: false, closedDay: null });
-  assert.deepEqual(parseSettings('мусор'), { lang: null, theme: null, sort: 'manual', planFolded: false, closedDay: null });
+  assert.deepEqual(parseSettings('{"lang":"en","theme":"dark","sort":"due"}'), { ...BASE, lang: 'en', theme: 'dark', sort: 'due' });
+  assert.deepEqual(parseSettings('{"lang":"de","theme":"pink","sort":"x"}'), BASE);
+  assert.deepEqual(parseSettings('{"planFolded":true,"closedDay":"2026-11-11"}'), { ...BASE, planFolded: true, closedDay: '2026-11-11' });
+  assert.deepEqual(parseSettings('{"planFolded":"yes","closedDay":"вчера"}'), BASE);
+  assert.deepEqual(parseSettings('мусор'), BASE);
+  assert.deepEqual(DEFAULT_SETTINGS, BASE);
+});
+
+test('цвет приложения: известный сохраняется, чужой и старые настройки без него дают кобальт', () => {
+  assert.equal(parseSettings('{"accent":"sky"}').accent, 'sky');
+  assert.equal(parseSettings('{"accent":"graphite","theme":"dark"}').accent, 'graphite');
+  for (const bad of ['"pink"', '"Sky"', '1', 'null', '{}', '["mint"]', '"__proto__"']) {
+    assert.equal(parseSettings(`{"accent":${bad}}`).accent, 'cobalt', bad);
+  }
+  // настройки v4: тема и язык на месте, цвет по умолчанию
+  assert.deepEqual(parseSettings('{"lang":"ru","theme":"dark","sort":"manual","planFolded":false,"closedDay":null}'), { ...BASE, lang: 'ru', theme: 'dark' });
+  const storage = memoryStorage();
+  saveSettings({ ...BASE, accent: 'coral' }, storage);
+  assert.equal(loadSettings(storage).accent, 'coral');
+});
+
+test('экспорт и импорт: цвет приложения едет вместе с задачами, старый файл без него читается', () => {
+  const file = exportJSON([full('a')], new Date(0), { ...BASE, accent: 'mint', lang: 'ru' });
+  const data = JSON.parse(file);
+  assert.deepEqual(data.settings, { accent: 'mint' }, 'в файл попадает только оформление, не язык и не сортировка');
+  assert.deepEqual(importJSON(file, []).prefs, { accent: 'mint' });
+  assert.equal(importJSON(exportJSON([full('a')], new Date(0)), []).prefs, null, 'файл v4 без настроек');
+  assert.equal(JSON.parse(exportJSON([full('a')], new Date(0))).settings, undefined);
+  const bad = JSON.stringify({ todos: [full('a')], settings: { accent: 'neon' } });
+  assert.equal(importJSON(bad, []).prefs, null);
+  assert.equal(importJSON(JSON.stringify({ todos: [full('a')], settings: 'sky' }), []).prefs, null);
 });
 
 test('экспорт и импорт: файл читается обратно, совпадающие id заменяются', () => {

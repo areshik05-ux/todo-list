@@ -16,6 +16,7 @@ import { sampleTodos, translateSamples } from './samples.js';
 import { toICS, icsFileName, ICS_TYPE } from './calendar.js';
 import { backupNudge, markBackup, readLastBackup, daysSince, requestPersist } from './backup.js';
 import { createInstall, launchAction } from './install.js';
+import { ACCENTS, cleanAccent, stepChoice } from './accents.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -39,7 +40,8 @@ const helpDialog = $('#help');
 const dataBtn = $('#data-btn');
 const dataPanel = $('#data-panel');
 const importFile = $('#import-file');
-const themeBtn = $('#theme-btn');
+const lookBtn = $('#look-btn');
+const lookPanel = $('#look-panel');
 const helpBtn = $('#help-btn');
 const todoTemplate = $('#todo-template');
 const editorTemplate = $('#editor-template');
@@ -1110,7 +1112,7 @@ function applyLanguage() {
   translate();
   document.documentElement.classList.remove('i18n-pending');
   for (const btn of $$('[data-lang]')) btn.setAttribute('aria-pressed', String(btn.dataset.lang === settings.lang));
-  for (const [btn, key] of [[themeBtn, 'theme.dark'], [helpBtn, 'menu.shortcuts'], [dataBtn, 'data.label'], [searchToggle, 'search.label']]) {
+  for (const [btn, key] of [[lookBtn, 'look.label'], [helpBtn, 'menu.shortcuts'], [dataBtn, 'data.label'], [searchToggle, 'search.label']]) {
     btn.setAttribute('aria-label', t(key));
     btn.title = t(key);
   }
@@ -1134,8 +1136,42 @@ function themeNow() {
 function applyTheme() {
   const dark = themeNow() === 'dark';
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-  themeBtn.setAttribute('aria-pressed', String(dark));
   // цвет полосы браузера (meta theme-color) меняет boot.js вслед за data-theme
+  syncLook();
+}
+
+// Цвет приложения: атрибут на <html>, цвета в css/theme.css. boot.js ставит его ещё до отрисовки.
+function applyAccent() {
+  settings.accent = cleanAccent(settings.accent);
+  document.documentElement.dataset.accent = settings.accent;
+  syncLook();
+}
+
+// Отметки в окне «Оформление»: выбранный вариант в каждой группе и он же в Tab-порядке.
+function syncLook() {
+  const theme = settings.theme ?? 'auto';
+  for (const btn of $$('[data-theme-choice]', lookPanel)) {
+    const on = btn.dataset.themeChoice === theme;
+    btn.setAttribute('aria-checked', String(on));
+    btn.tabIndex = on ? 0 : -1;
+  }
+  for (const btn of $$('[data-accent-choice]', lookPanel)) {
+    const on = btn.dataset.accentChoice === settings.accent;
+    btn.setAttribute('aria-checked', String(on));
+    btn.tabIndex = on ? 0 : -1;
+  }
+}
+
+function setTheme(theme) {
+  settings.theme = theme === 'light' || theme === 'dark' ? theme : null;
+  saveSettings(settings);
+  applyTheme();
+}
+
+function setAccent(accent) {
+  settings.accent = cleanAccent(accent);
+  saveSettings(settings);
+  applyAccent();
 }
 
 /* Быстрое добавление */
@@ -2274,13 +2310,114 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
   if (!settings.theme) applyTheme();
 });
 
-themeBtn.addEventListener('click', () => {
-  settings.theme = themeNow() === 'dark' ? 'light' : 'dark';
-  saveSettings(settings);
-  applyTheme();
+// Окно «Оформление»: тема (светлая, тёмная, как в системе) и цвет приложения.
+// Не модальное, как меню данных: выбор применяется сразу, Esc и клик мимо закрывают.
+function lookOpen() {
+  return !lookPanel.hidden;
+}
+
+function placeLook() {
+  if (!lookOpen()) return;
+  const r = lookBtn.getBoundingClientRect();
+  const wide = matchMedia('(min-width: 960px)').matches;
+  const w = Math.min(300, innerWidth - 24);
+  let left;
+  let top;
+  lookPanel.style.width = wide ? `${w}px` : `${innerWidth - 24}px`;
+  if (wide) {
+    // над рядом кнопок внизу боковой панели, от её левого края; не влезает по высоте: прокрутка внутри
+    const side = lookBtn.closest('.side-tools').getBoundingClientRect();
+    left = Math.max(12, Math.min(side.left, innerWidth - w - 12));
+    lookPanel.style.maxHeight = `${Math.max(160, r.top - 18)}px`;
+    top = Math.max(12, r.top - 6 - lookPanel.offsetHeight);
+  } else {
+    // телефон: под верхней строкой, по 12 px от краёв
+    left = 12;
+    top = r.bottom + 6;
+    lookPanel.style.maxHeight = `${Math.max(160, innerHeight - top - 12)}px`;
+  }
+  lookPanel.style.left = `${left}px`;
+  lookPanel.style.top = `${top}px`;
+}
+
+function setLook(open, { focus = open ? 'panel' : null } = {}) {
+  if (open === lookOpen()) return;
+  lookPanel.hidden = !open;
+  lookBtn.setAttribute('aria-expanded', String(open));
+  if (open) {
+    closeMenu(false);
+    setDataPanel(false);
+    syncLook();
+    placeLook();
+    if (focus === 'panel') $('[data-theme-choice][aria-checked="true"]', lookPanel)?.focus();
+  } else if (focus === 'button') {
+    lookBtn.focus();
+  }
+}
+
+lookBtn.addEventListener('click', () => setLook(!lookOpen()));
+
+lookPanel.addEventListener('click', (e) => {
+  const theme = e.target.closest('[data-theme-choice]');
+  const accent = e.target.closest('[data-accent-choice]');
+  if (theme) {
+    setTheme(theme.dataset.themeChoice);
+    theme.focus();
+  } else if (accent) {
+    setAccent(accent.dataset.accentChoice);
+    accent.focus();
+  }
 });
 
+// Стрелки внутри группы: следующий вариант выбирается сразу (как у обычных переключателей)
+const THEME_CHOICES = ['light', 'dark', 'auto'];
+lookPanel.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    e.stopPropagation();
+    setLook(false, { focus: 'button' });
+    return;
+  }
+  const delta = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+  if (!delta) return;
+  const theme = e.target.closest('[data-theme-choice]');
+  const accent = e.target.closest('[data-accent-choice]');
+  if (!theme && !accent) return;
+  e.preventDefault();
+  if (theme) {
+    const next = stepChoice(THEME_CHOICES, theme.dataset.themeChoice, delta);
+    setTheme(next);
+    $(`[data-theme-choice="${next}"]`, lookPanel).focus();
+  } else {
+    // в сетке из двух колонок вверх и вниз идут через колонку
+    const step = e.key === 'ArrowDown' || e.key === 'ArrowUp' ? delta * 2 : delta;
+    const at = ACCENTS.indexOf(accent.dataset.accentChoice);
+    const next = ACCENTS[(at + step + ACCENTS.length * 2) % ACCENTS.length];
+    setAccent(next);
+    $(`[data-accent-choice="${next}"]`, lookPanel).focus();
+  }
+});
+
+document.addEventListener('click', (e) => {
+  // клик по команде в Ctrl+K сам открывает это окно: его не закрываем
+  if (lookOpen() && !e.target.closest('.look, #palette')) setLook(false);
+});
+
+// ушли Tab-ом из окна: закрываем его
+$('.look').addEventListener('focusout', (e) => {
+  if (e.relatedTarget && !e.currentTarget.contains(e.relatedTarget)) setLook(false);
+});
+
+window.addEventListener('resize', placeLook);
+// страница прокрутилась (на телефоне верхняя строка уезжает): окно едет за кнопкой
+document.addEventListener('scroll', () => {
+  if (!lookOpen()) return;
+  if (lookBtn.getBoundingClientRect().bottom < 0) setLook(false);
+  else placeLook();
+}, { passive: true });
+
 function setDataPanel(open) {
+  if (open) setLook(false);
   dataPanel.hidden = !open;
   dataBtn.setAttribute('aria-expanded', String(open));
 }
@@ -2309,7 +2446,7 @@ function download(text, name, type = 'application/json') {
 }
 
 $('#export-btn').addEventListener('click', () => {
-  download(exportJSON(todos), `tasks-${todayKey()}.json`);
+  download(exportJSON(todos, new Date(), settings), `tasks-${todayKey()}.json`);
   markBackup();
   renderBackupNudge();
   setDataPanel(false);
@@ -2330,6 +2467,8 @@ importFile.addEventListener('change', async () => {
     return;
   }
   const snapshot = todos;
+  // в копии сохранён цвет приложения: восстанавливаем и его
+  if (result.prefs?.accent && result.prefs.accent !== settings.accent) setAccent(result.prefs.accent);
   commit(result.todos, { focus: dataBtn });
   renderBackupNudge();
   showToast(t('toast.imported', { n: result.count }), { snapshot, focus: dataBtn });
@@ -2402,7 +2541,16 @@ function paletteCommands() {
       group: 'views', id: `view-${name}`, label: t(`view.${name}`), hint: String(i + 1), icon: VIEW_ICONS[name],
       run: () => { location.hash = `#/${name}`; },
     })),
-    { group: 'actions', id: 'theme', label: t(dark ? 'palette.light' : 'palette.dark'), keys: t('palette.kw.theme'), icon: dark ? 'sun' : 'moon', run: () => themeBtn.click() },
+    { group: 'actions', id: 'theme', label: t(dark ? 'palette.light' : 'palette.dark'), keys: t('palette.kw.theme'), icon: dark ? 'sun' : 'moon', run: () => setTheme(dark ? 'light' : 'dark') },
+    { group: 'actions', id: 'look', label: t('palette.look'), keys: `${t('palette.kw.accent')} ${t('palette.kw.theme')}`, icon: 'palette', run: () => setLook(true) },
+    ...[['light', 'palette.themeLight', 'sun'], ['dark', 'palette.themeDark', 'moon'], [null, 'palette.themeAuto', 'palette']].map(([value, key, icon]) => ({
+      group: 'actions', id: `theme-${value ?? 'auto'}`, label: t(key), keys: t('palette.kw.theme'), icon,
+      hint: settings.theme === value ? t('palette.current') : '', run: () => setTheme(value),
+    })),
+    ...ACCENTS.map((id) => ({
+      group: 'actions', id: `accent-${id}`, label: t('palette.accent', { name: t(`accent.${id}`) }), keys: t('palette.kw.accent'), icon: 'palette',
+      hint: settings.accent === id ? t('palette.current') : '', run: () => setAccent(id),
+    })),
     { group: 'actions', id: 'lang', label: other === 'en' ? 'English' : 'Русский', keys: t('palette.kw.lang'), icon: 'globe', run: () => $(`[data-lang="${other}"]`).click() },
     { group: 'actions', id: 'export', label: t('menu.export'), keys: t('palette.kw.export'), icon: 'download', run: () => $('#export-btn').click() },
     { group: 'actions', id: 'import', label: t('menu.import'), keys: t('palette.kw.import'), icon: 'upload', run: () => importFile.click() },
@@ -2487,6 +2635,7 @@ function openPalette() {
   if (palette.open || helpDialog.open) return;
   closeMenu(false);
   setDataPanel(false);
+  setLook(false);
   palInput.value = '';
   renderPalette();
   palette.showModal();
@@ -2575,7 +2724,9 @@ document.addEventListener('keydown', (e) => {
   const row = target.closest?.('.todo');
 
   if (e.key === 'Escape') {
-    if (!dataPanel.hidden) {
+    if (lookOpen()) {
+      setLook(false, { focus: 'button' });
+    } else if (!dataPanel.hidden) {
       setDataPanel(false);
       dataBtn.focus();
     } else if (target === input) {
@@ -2675,6 +2826,7 @@ window.addEventListener('storage', (e) => {
     const next = loadSettings();
     Object.assign(settings, next, { lang: next.lang ?? settings.lang });
     applyTheme();
+    applyAccent();
     applyLanguage();
     render();
   } else if (e.key === REST_MOVED_KEY) {
@@ -2720,6 +2872,7 @@ $('#corrupt-download').addEventListener('click', () => {
   dataBtn.focus();
 });
 applyTheme();
+applyAccent();
 applyLanguage();
 quietly(() => render());
 

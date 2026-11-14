@@ -313,8 +313,23 @@ kbd {
     padding: 0 12px;
   }
 
+  /* значки разделов цветом приложения, «Готово» вторым цветом пары, как галочка. Без подложек:
+     выбранный раздел всё равно заметнее всех (фон и жирный текст) */
   .view .view-icon {
     display: block;
+    color: var(--accent-line);
+  }
+
+  .view[data-view="done"] .view-icon {
+    color: var(--pink);
+  }
+
+  .view[aria-current="page"] .view-icon {
+    color: var(--blue-ink);
+  }
+
+  .view[data-view="done"][aria-current="page"] .view-icon {
+    color: var(--pink-ink);
   }
 }
 
@@ -334,14 +349,6 @@ kbd {
     padding: 0 10px;
     color: var(--text);
     font-size: var(--fs-body);
-  }
-
-  .view .view-icon {
-    color: var(--text-2);
-  }
-
-  .view[aria-current="page"] .view-icon {
-    color: var(--blue-ink);
   }
 }
 
@@ -402,9 +409,181 @@ kbd {
   color: var(--text);
 }
 
-.icon-sun { display: none; }
-:root[data-theme="dark"] .icon-sun { display: block; }
-:root[data-theme="dark"] .icon-moon { display: none; }
+/* Оформление: тема и цвет приложения. Окно ставит app.js (position: fixed у кнопки):
+   на компьютере над рядом кнопок, шире боковой панели; на телефоне под верхней строкой. */
+.look-panel {
+  position: fixed;
+  z-index: 30;
+  top: 0;
+  left: 0;
+  width: 300px;
+  max-width: calc(100vw - 24px);
+  padding: 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--raised);
+  box-shadow: var(--shadow-overlay);
+  animation: menu-in var(--dur-2) var(--ease-out);
+}
+
+.look-title {
+  margin: 0 4px 8px;
+  color: var(--text);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.look-label {
+  margin: 12px 4px 6px;
+  color: var(--text-2);
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  line-height: 16px;
+}
+
+.look-title + .look-label { margin-top: 0; }
+
+.seg {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--r-sm);
+  background: var(--hover);
+}
+
+.seg button {
+  min-width: 0;
+  height: 32px;
+  padding: 0 6px;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: var(--r-xs);
+  color: var(--text-2);
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.seg button[aria-checked="true"] {
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.accent-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px;
+}
+
+.accent-opt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 40px;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  color: var(--text);
+  font-size: var(--fs-small);
+  line-height: 20px;
+  text-align: left;
+  transition: background-color var(--dur-1) var(--ease-out);
+}
+
+.accent-opt > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (hover: hover) {
+  .accent-opt:hover,
+  .seg button:hover:not([aria-checked="true"]) {
+    background: var(--hover);
+    color: var(--text);
+  }
+}
+
+/* выбранный цвет: фон, жирный текст и кольцо вокруг кружка, а не только цвет */
+.accent-opt[aria-checked="true"] {
+  background: var(--blue-tint);
+  color: var(--blue-ink);
+  font-weight: 600;
+}
+
+/* кружок = основной цвет темы, точка = второй (галочка и P1) */
+.accent-sw {
+  position: relative;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--sw-a);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.08);
+}
+
+.accent-sw::after {
+  content: "";
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--sw-p);
+  box-shadow: 0 0 0 2px var(--raised);
+}
+
+.accent-opt[aria-checked="true"] .accent-sw {
+  box-shadow: 0 0 0 2px var(--blue-tint), 0 0 0 4px var(--blue-ink);
+}
+
+.accent-opt[aria-checked="true"] .accent-sw::after {
+  box-shadow: 0 0 0 2px var(--blue-tint);
+}
+
+.look-foot {
+  margin: 10px 4px 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  color: var(--text-2);
+  font-size: var(--fs-meta);
+  line-height: 16px;
+  text-wrap: pretty;
+}
+
+@media (pointer: coarse) {
+  .seg button { height: 40px; }
+  .accent-opt { min-height: 44px; }
+}
+
+/* 320 px: «Marshmallow» целиком, без многоточия */
+@media (max-width: 359px) {
+  .look-panel { padding: 8px; }
+  .accent-opt { gap: 8px; padding: 6px; }
+}
+
+.sw-cobalt { --sw-a: #1f5fd6; --sw-p: #d6306e; }
+.sw-sky { --sw-a: #45a9ed; --sw-p: #e52e78; }
+.sw-marshmallow { --sw-a: #f07caf; --sw-p: #1780cf; }
+.sw-mint { --sw-a: #2bb68d; --sw-p: #e4375a; }
+.sw-coral { --sw-a: #f38266; --sw-p: #307bdd; }
+.sw-lilac { --sw-a: #b391ec; --sw-p: #e13a66; }
+.sw-graphite { --sw-a: #525e71; --sw-p: #d6306e; }
+:root[data-theme="dark"] .sw-cobalt { --sw-a: #6fa1ff; --sw-p: #ff7aa9; }
+:root[data-theme="dark"] .sw-sky { --sw-a: #4eaeed; --sw-p: #ef7eab; }
+:root[data-theme="dark"] .sw-marshmallow { --sw-a: #f182b2; --sw-p: #51a9ec; }
+:root[data-theme="dark"] .sw-mint { --sw-a: #2cbb90; --sw-p: #ee8096; }
+:root[data-theme="dark"] .sw-coral { --sw-a: #f4886e; --sw-p: #71a4e8; }
+:root[data-theme="dark"] .sw-lilac { --sw-a: #b697ed; --sw-p: #ec819e; }
+:root[data-theme="dark"] .sw-graphite { --sw-a: #a5aebe; --sw-p: #ff7aa9; }
 
 .data {
   position: relative;
@@ -880,7 +1059,7 @@ h1 {
 }
 
 .composer input:focus {
-  border-color: var(--blue);
+  border-color: var(--accent-line);
   box-shadow: 0 0 0 3px var(--blue-tint);
   outline: 2px solid var(--focus);
   outline-offset: 2px;
@@ -1221,7 +1400,7 @@ h1 {
 .check-in { color: var(--on-pink); }
 
 @media (hover: hover) {
-  .check:hover .check-box { border-color: var(--blue); }
+  .check:hover .check-box { border-color: var(--accent-line); }
 
   /* подсказка: бледная галочка при наведении */
   .check:hover .todo-check:not(:checked) + .check-box .check-path {
@@ -1229,7 +1408,7 @@ h1 {
     opacity: 0.35;
   }
 
-  .check:hover .todo-check:not(:checked) + .check-box .check-out { color: var(--blue); }
+  .check:hover .todo-check:not(:checked) + .check-box .check-out { color: var(--accent-line); }
   .check:hover .todo-check:not(:checked) + .check-box .check-in { opacity: 0; }
 }
 
@@ -1662,7 +1841,7 @@ button.meta-due[aria-expanded="true"] {
 }
 
 .step label:hover .step-box {
-  border-color: var(--blue);
+  border-color: var(--accent-line);
 }
 
 .step-text {
@@ -2459,7 +2638,7 @@ button.meta-due[aria-expanded="true"] {
   width: 4px;
   height: 4px;
   border-radius: 50%;
-  background: var(--blue);
+  background: var(--accent-line);
 }
 
 .week-dot.is-done {
@@ -2675,7 +2854,7 @@ button.meta-due[aria-expanded="true"] {
 
 @media (hover: hover) {
   .plan-take:hover {
-    border-color: var(--blue);
+    border-color: var(--accent-line);
     background: var(--blue-tint);
   }
 }
@@ -2797,7 +2976,7 @@ button.meta-due[aria-expanded="true"] {
 
 @media (hover: hover) {
   .example:hover {
-    border-color: var(--blue);
+    border-color: var(--accent-line);
     background: var(--blue-tint);
   }
 }

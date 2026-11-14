@@ -12,7 +12,12 @@
   var theme = settings.theme === 'dark' || settings.theme === 'light' ? settings.theme
     : (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
   root.dataset.theme = theme;
-  // цвет верхней полосы браузера на телефоне = --surface темы (css/theme.css)
+  // цвет приложения (окно «Оформление»): тот же список, что ACCENTS в accents.js, иначе кобальт.
+  // Ставится до отрисовки: страница не мигает кобальтом у тех, кто выбрал другой цвет.
+  var ACCENTS = ['cobalt', 'sky', 'marshmallow', 'mint', 'coral', 'lilac', 'graphite'];
+  root.dataset.accent = ACCENTS.indexOf(settings.accent) === -1 ? 'cobalt' : settings.accent;
+  // цвет верхней полосы браузера на телефоне = --surface темы (css/theme.css):
+  // он один у всех цветов приложения, меняется только со светлой и тёмной темой
   var BAR = { light: '#ffffff', dark: '#151921' };
   var meta = document.querySelector('meta[name="theme-color"]');
   function syncBar() {
