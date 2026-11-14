@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { ACCENTS } from '../js/accents.js';
+import { TAG_COLORS } from '../js/tags.js';
 
 const css = readFileSync(new URL('../css/theme.css', import.meta.url), 'utf8');
 
@@ -79,6 +80,25 @@ test('все цвета приложения в светлой и тёмной �
       for (const [fg, bg, min, where] of PAIRS) {
         const r = ratio(tk[fg], tk[bg]);
         if (r < min) fails.push(`${accent}/${theme}: ${fg} к ${bg} ${r.toFixed(2)} < ${min} (${where})`);
+      }
+    }
+  }
+  assert.deepEqual(fails, []);
+});
+
+test('цвета меток: текст на плашке от 4.5:1, значок к фону от 3:1, в обеих темах', () => {
+  const fails = [];
+  for (const theme of ['light', 'dark']) {
+    const tk = tokens(theme, 'cobalt');
+    for (const id of TAG_COLORS) {
+      const ink = tk[`--tag-${id}-ink`];
+      const tint = tk[`--tag-${id}-tint`];
+      const pairs = [[ink, tint, 4.5, 'метка в строке'], [ink, tk['--surface'], 4.5, 'имя цветом'], [ink, tk['--bg'], 4.5, 'боковая панель'],
+        [ink, tk['--hover'], 3, 'значок при наведении'], [ink, tk['--raised'], 3, 'кружок в окне'], [tk['--text-3'], tint, 4.5, 'число на выбранной метке'],
+        [tk['--text'], tint, 4.5, 'имя на выбранной']];
+      for (const [fg, bg, min, where] of pairs) {
+        const r = ratio(fg, bg);
+        if (r < min) fails.push(`${id}/${theme}: ${fg} к ${bg} ${r.toFixed(2)} < ${min} (${where})`);
       }
     }
   }

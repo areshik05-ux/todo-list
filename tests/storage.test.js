@@ -104,7 +104,7 @@ test('запрет на само обращение к localStorage (Chrome бе
 });
 
 // настройки по умолчанию (как DEFAULT_SETTINGS), с ними сравниваются разобранные
-const BASE = { lang: null, theme: null, accent: 'cobalt', sort: 'manual', planFolded: false, closedDay: null };
+const BASE = { lang: null, theme: null, accent: 'cobalt', sort: 'manual', planFolded: false, closedDay: null, tagMeta: {} };
 
 test('настройки: неизвестные значения заменяются на значения по умолчанию', () => {
   assert.deepEqual(parseSettings('{"lang":"en","theme":"dark","sort":"due"}'), { ...BASE, lang: 'en', theme: 'dark', sort: 'due' });
@@ -128,10 +128,29 @@ test('цвет приложения: известный сохраняется, 
   assert.equal(loadSettings(storage).accent, 'coral');
 });
 
+test('настройки v5: словарь меток проверяется, у каждой загрузки свой', () => {
+  const raw = JSON.stringify({ tagMeta: { Дом: { color: 'teal', icon: 'home' }, x: { color: 'neon' } } });
+  assert.deepEqual(parseSettings(raw).tagMeta, { дом: { color: 'teal', icon: 'home' } });
+  assert.deepEqual(parseSettings('{"tagMeta":"дом"}').tagMeta, {});
+  const a = loadSettings(brokenStorage);
+  a.tagMeta.дом = { color: 'teal', icon: null };
+  assert.deepEqual(loadSettings(brokenStorage).tagMeta, {}, 'общий объект по умолчанию не испорчен');
+  assert.ok(Object.isFrozen(DEFAULT_SETTINGS.tagMeta));
+});
+
+test('экспорт и импорт: цвета и значки меток в файле копии', () => {
+  const tagMeta = { дом: { color: 'plum', icon: 'home' }, работа: { color: 'teal', icon: null } };
+  const file = exportJSON([full('a', { tags: ['дом'] })], new Date(0), { ...BASE, accent: 'sky', tagMeta });
+  assert.deepEqual(JSON.parse(file).settings, { accent: 'sky', tagMeta });
+  assert.deepEqual(importJSON(file, []).prefs, { accent: 'sky', tagMeta });
+  const evil = JSON.stringify({ todos: [full('a')], settings: { tagMeta: { '<b>': { color: 'teal', icon: 'skull' }, ok: { color: 'red' } } } });
+  assert.deepEqual(importJSON(evil, []).prefs, { tagMeta: { b: { color: 'teal', icon: null } } });
+});
+
 test('экспорт и импорт: цвет приложения едет вместе с задачами, старый файл без него читается', () => {
   const file = exportJSON([full('a')], new Date(0), { ...BASE, accent: 'mint', lang: 'ru' });
   const data = JSON.parse(file);
-  assert.deepEqual(data.settings, { accent: 'mint' }, 'в файл попадает только оформление, не язык и не сортировка');
+  assert.deepEqual(data.settings, { accent: 'mint', tagMeta: {} }, 'в файл попадает только оформление, не язык и не сортировка');
   assert.deepEqual(importJSON(file, []).prefs, { accent: 'mint' });
   assert.equal(importJSON(exportJSON([full('a')], new Date(0)), []).prefs, null, 'файл v4 без настроек');
   assert.equal(JSON.parse(exportJSON([full('a')], new Date(0))).settings, undefined);

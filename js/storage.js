@@ -3,6 +3,7 @@ import { isRepeat, isRepeatDay, repeatDayFor } from './repeat.js';
 import { isDateKey } from './dates.js';
 import { normalizeTags } from './parse.js';
 import { cleanAccent, isAccent, DEFAULT_ACCENT } from './accents.js';
+import { cleanTagMeta } from './tags.js';
 
 export const STORAGE_KEY = 'todo-list:v2';
 export const LEGACY_KEY = 'todo-list:v1';
@@ -169,10 +170,14 @@ export function saveTodos(todos, storage) {
   }
 }
 
-/* Настройки: язык, тема, цвет приложения, сортировка, свёрнутые предложения, день, когда оторвали листок */
+/* Настройки: язык, тема, цвет приложения, цвета и значки меток, сортировка, свёрнутые предложения,
+   день, когда оторвали листок */
 
 // theme: null, пока человек не выбрал сам: тогда тема как в системе
-export const DEFAULT_SETTINGS = { lang: null, theme: null, accent: DEFAULT_ACCENT, sort: 'manual', planFolded: false, closedDay: null };
+export const DEFAULT_SETTINGS = Object.freeze({ lang: null, theme: null, accent: DEFAULT_ACCENT, sort: 'manual', planFolded: false, closedDay: null, tagMeta: Object.freeze({}) });
+
+// свежая копия: словарь меток у каждого свой, общий объект по умолчанию не меняется
+const defaults = () => ({ ...DEFAULT_SETTINGS, tagMeta: {} });
 
 export function parseSettings(raw) {
   try {
@@ -185,9 +190,11 @@ export function parseSettings(raw) {
       sort: ['manual', 'due', 'priority'].includes(data.sort) ? data.sort : 'manual',
       planFolded: data.planFolded === true,
       closedDay: isDateKey(data.closedDay) ? data.closedDay : null,
+      // { "дом": { color, icon } }; до v5 словаря не было, метки получат цвета при загрузке
+      tagMeta: cleanTagMeta(data.tagMeta),
     };
   } catch {
-    return { ...DEFAULT_SETTINGS };
+    return defaults();
   }
 }
 
@@ -195,7 +202,7 @@ export function loadSettings(storage) {
   try {
     return parseSettings(local(storage).getItem(SETTINGS_KEY));
   } catch {
-    return { ...DEFAULT_SETTINGS };
+    return defaults();
   }
 }
 
@@ -210,7 +217,7 @@ export function saveSettings(settings, storage) {
 
 /* Экспорт и импорт */
 
-// prefs: оформление, которое едет вместе с задачами (цвет приложения), чтобы копия
+// prefs: оформление, которое едет вместе с задачами (цвет приложения, цвета и значки меток), чтобы копия
 // на другом компьютере выглядела так же. Старые файлы без него читаются как раньше.
 export function exportJSON(todos, now = new Date(), prefs = null) {
   const settings = prefs ? exportPrefs(prefs) : undefined;
@@ -218,7 +225,7 @@ export function exportJSON(todos, now = new Date(), prefs = null) {
 }
 
 function exportPrefs(prefs) {
-  return { accent: cleanAccent(prefs.accent) };
+  return { accent: cleanAccent(prefs.accent), tagMeta: cleanTagMeta(prefs.tagMeta) };
 }
 
 // Из файла берём только то, что знаем и что прошло проверку.
@@ -227,6 +234,8 @@ function importPrefs(data) {
   if (!raw || typeof raw !== 'object') return null;
   const out = {};
   if (isAccent(raw.accent)) out.accent = raw.accent;
+  const tagMeta = cleanTagMeta(raw.tagMeta);
+  if (Object.keys(tagMeta).length) out.tagMeta = tagMeta;
   return Object.keys(out).length ? out : null;
 }
 

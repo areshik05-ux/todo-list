@@ -17,6 +17,7 @@ import { toICS, icsFileName, ICS_TYPE } from './calendar.js';
 import { backupNudge, markBackup, readLastBackup, daysSince, requestPersist } from './backup.js';
 import { createInstall, launchAction } from './install.js';
 import { ACCENTS, cleanAccent, stepChoice } from './accents.js';
+import { syncTagMeta, setTagMeta, metaFor, tagStats, tagOfQuery, tagKey, tagsInOrder } from './tags.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -64,6 +65,13 @@ const planFoot = $('#plan-foot');
 const planAgain = $('#plan-again');
 const content = $('#content');
 const searchToggle = $('#search-toggle');
+const tagsSide = $('#tags-side');
+const tagList = $('#tag-list');
+const tagsToggle = $('#tags-toggle');
+const tagRow = $('#tag-row');
+const tagActions = $('#tag-actions');
+const tagEditBtn = $('#tag-edit-btn');
+const tagPanel = $('#tag-panel');
 
 const LINGER_MS = 700; // столько отмеченная задача остаётся на месте, прежде чем уйти в «Готово»
 const LEAVE_MS = 240;
@@ -75,6 +83,7 @@ const EVENING_HOUR = 18; // с 18:00 можно перенести оставш�
 const PLAN_SHORT = 3; // столько предложений видно сразу
 const PLAN_MAX = 10; // больше не показываем, дальше ссылка на «Все»
 const CHECK_MS = 700; // столько живёт анимация отметки у строки
+const TAGS_SHORT = 7; // столько меток видно в боковой панели сразу, остальные за «Ещё N»
 
 const firstVisit = isFirstVisit();
 const loaded = loadTodosReport();
@@ -88,6 +97,25 @@ const t = (...args) => i18n.t(...args);
 if (firstVisit && !todos.length) {
   todos = sampleTodos(t, todayKey());
   saveTodos(todos);
+}
+
+// Метки: у каждой цвет и значок. Новая метка получает их при первом появлении (цвет по порядку,
+// значок по знакомому слову), старые данные без словаря получают его здесь же.
+function syncMeta() {
+  const next = syncTagMeta(settings.tagMeta, todos);
+  if (next === settings.tagMeta) return false;
+  settings.tagMeta = next;
+  saveSettings(settings);
+  return true;
+}
+syncMeta();
+
+// Как выглядит метка сейчас; у ещё не добавленной (в поле ввода) та, что она получит.
+function metaOf(tag) {
+  // своя запись есть почти всегда: список меток в работе считаем, только когда её нет
+  const key = tagKey(tag);
+  if (Object.hasOwn(settings.tagMeta, key)) return settings.tagMeta[key];
+  return metaFor(settings.tagMeta, tag, tagsInOrder(todos).map(tagKey));
 }
 
 let view = viewFromHash();
@@ -138,6 +166,8 @@ let heldRaw = loaded.corrupt && !loaded.backedUp;
 
 function persist() {
   if (heldRaw) return;
+  // словарь меток пишется раньше задач: другая вкладка увидит цвет новой метки вместе с ней
+  syncMeta();
   storageWarning.hidden = saveTodos(todos);
 }
 
@@ -183,7 +213,8 @@ function svgIcon(name, className = 'icon') {
   svg.setAttribute('class', className);
   svg.setAttribute('aria-hidden', 'true');
   const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-  use.setAttribute('href', `#i-${name}`);
+  // значки меток в спрайте с префиксом t- (tags.js), остальные с i-
+  use.setAttribute('href', name.startsWith('t-') ? `#${name}` : `#i-${name}`);
   svg.append(use);
   return svg;
 }
@@ -276,8 +307,21 @@ function renderHeader(d, total) {
   main.classList.add('is-ready');
   main.classList.toggle('has-tasks', todos.length > 0);
   searchToggle.setAttribute('aria-expanded', String(main.classList.contains('tools-open') || Boolean(query)));
-  const title = query ? t('view.search') : t(`view.${view}`);
-  if (today) {
+  // поиск «#дом» по существующей метке: заголовок = метка, рядом «Цвет и значок»
+  const tagQ = tagOfQuery(query);
+  const tagRowStat = tagQ ? tagStats(todos).find((r) => r.key === tagKey(tagQ)) : null;
+  const title = tagRowStat ? `#${tagRowStat.tag}` : query ? t('view.search') : t(`view.${view}`);
+  tagActions.hidden = !tagRowStat;
+  viewTitle.className = tagRowStat ? `is-tag tc-${metaOf(tagRowStat.tag).color}` : '';
+  if (tagRowStat) {
+    const name = document.createElement('span');
+    name.className = 'visually-hidden';
+    name.textContent = `${t('tag.title', { tag: '' }).trim()} `;
+    const meta = metaOf(tagRowStat.tag);
+    viewTitle.replaceChildren(...(meta.icon ? [svgIcon(`t-${meta.icon}`, 'icon title-icon')] : []), name, title);
+    tagEditBtn.dataset.tag = tagRowStat.tag;
+    tagEditBtn.setAttribute('aria-label', t('tag.editLabel', { tag: title }));
+  } else if (today) {
     // на экране приветствие, скринридер слышит и название раздела: «Сегодня. Добрый вечер»
     const name = document.createElement('span');
     name.className = 'visually-hidden';
@@ -457,6 +501,267 @@ function renderPlan(d, today) {
   patchChildren(planFoot, foot);
 }
 
+/* Метки как списки: блок в боковой панели (компьютер) и строка в «Все» (телефон) */
+
+let tagsExpanded = false; // «Ещё N»: видны все метки
+let tagsKey = '';
+
+function tagButton(row, current) {
+  const meta = metaOf(row.tag);
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = `tag-link tc-${meta.color}`;
+  btn.dataset.tag = row.tag;
+  btn.setAttribute('aria-pressed', String(current));
+  btn.setAttribute('aria-label', t('tags.item', { tag: `#${row.tag}`, tasks: t('tasks', { n: row.open }) }));
+  const mark = meta.icon ? svgIcon(`t-${meta.icon}`) : document.createElement('span');
+  if (!meta.icon) {
+    mark.className = 'tag-dot';
+    mark.setAttribute('aria-hidden', 'true');
+  }
+  const name = document.createElement('span');
+  name.className = 'tag-name';
+  name.textContent = row.tag;
+  const count = document.createElement('span');
+  count.className = 'tag-count';
+  count.setAttribute('aria-hidden', 'true');
+  count.textContent = row.open ? String(row.open) : '';
+  btn.append(mark, name, count);
+  return btn;
+}
+
+function renderTags() {
+  const stats = tagStats(todos, settings.lang);
+  const currentKey = tagKey(tagOfQuery(query) ?? '');
+  const showRow = view === 'all' && (!query || stats.some((r) => r.key === currentKey));
+  const editing = tagEdit?.kind === 'side' ? tagEdit.key : null;
+  const key = JSON.stringify([stats, currentKey, stats.map((r) => metaOf(r.tag)), settings.lang, tagsExpanded, showRow, editing]);
+  if (key === tagsKey) return;
+  tagsKey = key;
+  // фокус был на метке: после перерисовки он на той же метке
+  const active = document.activeElement;
+  const refocus = active && (tagList.contains(active) || tagRow.contains(active))
+    ? { tag: active.dataset.tag, more: active.classList.contains('tag-more'), row: tagRow.contains(active) } : null;
+
+  tagsSide.hidden = !stats.length;
+  let shown = tagsExpanded ? stats : stats.slice(0, TAGS_SHORT);
+  // выбранная метка видна, даже если она в свёрнутой части
+  if (!tagsExpanded && currentKey && !shown.some((r) => r.key === currentKey)) {
+    const cur = stats.find((r) => r.key === currentKey);
+    if (cur) shown = [...shown, cur];
+  }
+  tagList.replaceChildren(...shown.map((row) => {
+    const current = row.key === currentKey;
+    const li = document.createElement('li');
+    li.className = `tag-item tc-${metaOf(row.tag).color}`;
+    li.classList.toggle('is-current', current);
+    const more = document.createElement('button');
+    more.type = 'button';
+    more.className = 'icon-btn tag-more';
+    more.dataset.tag = row.tag;
+    more.setAttribute('aria-haspopup', 'dialog');
+    more.setAttribute('aria-controls', 'tag-panel');
+    more.setAttribute('aria-expanded', String(editing === row.key));
+    more.setAttribute('aria-label', t('tag.editLabel', { tag: `#${row.tag}` }));
+    more.title = t('tag.edit');
+    more.append(svgIcon('more'));
+    li.append(tagButton(row, current), more);
+    return li;
+  }));
+  tagsToggle.hidden = stats.length <= TAGS_SHORT;
+  tagsToggle.textContent = tagsExpanded ? t('tags.less') : t('tags.more', { n: stats.length - TAGS_SHORT });
+  tagsToggle.setAttribute('aria-expanded', String(tagsExpanded));
+
+  tagRow.hidden = !(showRow && stats.length);
+  tagRow.replaceChildren(...(tagRow.hidden ? [] : stats.map((row) => tagButton(row, row.key === currentKey))));
+
+  if (refocus) {
+    const box = refocus.row ? tagRow : tagList;
+    const sel = refocus.more ? '.tag-more' : '.tag-link';
+    const target = [...box.querySelectorAll(sel)].find((el) => el.dataset.tag === refocus.tag);
+    if (target) target.focus({ preventScroll: true });
+  }
+  if (tagEdit) tagEdit.opener = tagOpener();
+}
+
+// Клик по метке в списке: фильтр по ней; по уже выбранной: фильтр снимается.
+function toggleTagFilter(btn) {
+  const tag = btn.dataset.tag;
+  const on = tagKey(tagOfQuery(query) ?? '') === tagKey(tag);
+  setQuery(on ? '' : `#${tag}`);
+  // у строки на телефоне выбранная метка прокручивается в видимую часть
+  if (tagRow.contains(btn) || !btn.isConnected) {
+    const same = [...tagRow.querySelectorAll('.tag-link')].find((el) => el.dataset.tag === tag);
+    same?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
+}
+
+for (const box of [tagList, tagRow]) {
+  box.addEventListener('click', (e) => {
+    const link = e.target.closest('.tag-link');
+    const more = e.target.closest('.tag-more');
+    if (link) toggleTagFilter(link);
+    else if (more) openTagPanel(more.dataset.tag, more, 'side');
+  });
+}
+
+tagsToggle.addEventListener('click', () => {
+  tagsExpanded = !tagsExpanded;
+  renderTags();
+});
+
+tagEditBtn.addEventListener('click', () => openTagPanel(tagEditBtn.dataset.tag, tagEditBtn, 'head'));
+
+/* Окно «Цвет и значок метки»: не модальное, выбор применяется сразу */
+
+let tagEdit = null; // { tag, key, kind: 'side' | 'head', opener }
+
+function tagOpener() {
+  if (!tagEdit) return null;
+  if (tagEdit.kind === 'head') return tagEditBtn.isConnected && !tagActions.hidden ? tagEditBtn : null;
+  return [...tagList.querySelectorAll('.tag-more')].find((el) => tagKey(el.dataset.tag) === tagEdit.key) ?? null;
+}
+
+function syncTagPanel() {
+  if (!tagEdit) return;
+  const meta = metaOf(tagEdit.tag);
+  tagPanel.className = `tag-panel tc-${meta.color}`;
+  $('#tag-panel-title').textContent = t('tag.title', { tag: `#${tagEdit.tag}` });
+  for (const btn of $$('[data-color]', tagPanel)) {
+    const on = btn.dataset.color === meta.color;
+    btn.setAttribute('aria-checked', String(on));
+    btn.tabIndex = on ? 0 : -1;
+  }
+  for (const btn of $$('[data-icon]', tagPanel)) {
+    const on = btn.dataset.icon === (meta.icon ?? '');
+    btn.setAttribute('aria-checked', String(on));
+    btn.tabIndex = on ? 0 : -1;
+  }
+}
+
+function placeTagPanel() {
+  if (!tagEdit) return;
+  const opener = tagEdit.opener;
+  if (!opener?.isConnected) return;
+  const r = opener.getBoundingClientRect();
+  const w = Math.min(300, innerWidth - 24);
+  tagPanel.style.width = `${w}px`;
+  tagPanel.style.maxHeight = `${innerHeight - 24}px`;
+  const h = tagPanel.offsetHeight;
+  let left;
+  let top;
+  if (tagEdit.kind === 'side') {
+    // справа от боковой панели, на высоте метки
+    left = Math.min(r.right + 8, innerWidth - w - 12);
+    top = Math.max(12, Math.min(r.top - 12, innerHeight - h - 12));
+  } else {
+    left = Math.max(12, Math.min(r.left, innerWidth - w - 12));
+    const below = r.bottom + 6 + h <= innerHeight - 12;
+    top = below ? r.bottom + 6 : Math.max(12, Math.min(r.top - 6 - h, innerHeight - h - 12));
+  }
+  tagPanel.style.left = `${left}px`;
+  tagPanel.style.top = `${top}px`;
+}
+
+function openTagPanel(tag, opener, kind) {
+  if (!tag) return;
+  if (tagEdit && tagKey(tagEdit.tag) === tagKey(tag) && tagEdit.kind === kind) {
+    closeTagPanel(true);
+    return;
+  }
+  closeTagPanel(false);
+  closeMenu(false);
+  setDataPanel(false);
+  setLook(false);
+  tagEdit = { tag, key: tagKey(tag), kind, opener };
+  opener.setAttribute('aria-expanded', 'true');
+  syncTagPanel();
+  tagPanel.hidden = false;
+  placeTagPanel();
+  $('[data-color][aria-checked="true"]', tagPanel)?.focus();
+}
+
+function closeTagPanel(returnFocus) {
+  if (!tagEdit) return;
+  const opener = tagOpener() ?? tagEdit.opener;
+  tagEdit = null;
+  tagPanel.hidden = true;
+  tagsKey = '';
+  for (const btn of [tagEditBtn, ...tagList.querySelectorAll('.tag-more')]) btn.setAttribute('aria-expanded', 'false');
+  if (returnFocus) (opener?.isConnected && opener.getClientRects().length ? opener : viewTitle).focus();
+}
+
+function changeTag(patch, focusSel) {
+  if (!tagEdit) return;
+  const next = setTagMeta(settings.tagMeta, tagEdit.tag, patch);
+  if (next !== settings.tagMeta) {
+    settings.tagMeta = next;
+    saveSettings(settings);
+    render();
+  }
+  syncTagPanel();
+  $(focusSel, tagPanel)?.focus();
+}
+
+tagPanel.addEventListener('click', (e) => {
+  const color = e.target.closest('[data-color]');
+  const icon = e.target.closest('[data-icon]');
+  if (color) changeTag({ color: color.dataset.color }, `[data-color="${color.dataset.color}"]`);
+  else if (icon) changeTag({ icon: icon.dataset.icon || null }, `[data-icon="${icon.dataset.icon}"]`);
+  else if (e.target.closest('#tag-done')) closeTagPanel(true);
+});
+
+// сколько кнопок в ряду: стрелки вверх и вниз идут на ряд
+function columnsOf(buttons) {
+  const top = buttons[0]?.offsetTop;
+  const n = buttons.filter((b) => b.offsetTop === top).length;
+  return Math.max(1, n);
+}
+
+tagPanel.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    e.stopPropagation();
+    closeTagPanel(true);
+    return;
+  }
+  const btn = e.target.closest('[data-color], [data-icon]');
+  if (!btn) return;
+  const group = btn.hasAttribute('data-color') ? $$('[data-color]', tagPanel) : $$('[data-icon]', tagPanel);
+  const cols = columnsOf(group);
+  const step = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: cols, ArrowUp: -cols, Home: -Infinity, End: Infinity }[e.key];
+  if (step === undefined) return;
+  e.preventDefault();
+  const at = group.indexOf(btn);
+  let to = Number.isFinite(step) ? at + step : step < 0 ? 0 : group.length - 1;
+  if (Math.abs(step) === 1) to = (to + group.length) % group.length;
+  else to = Math.max(0, Math.min(group.length - 1, to));
+  group[to].click();
+});
+
+document.addEventListener('click', (e) => {
+  if (!tagEdit) return;
+  if (e.target.closest('#tag-panel, .tag-more, #tag-edit-btn, #palette')) return;
+  closeTagPanel(false);
+});
+
+tagPanel.addEventListener('focusout', (e) => {
+  if (!tagEdit || !e.relatedTarget) return;
+  if (tagPanel.contains(e.relatedTarget) || e.relatedTarget === tagEdit.opener) return;
+  closeTagPanel(false);
+});
+
+window.addEventListener('resize', placeTagPanel);
+document.addEventListener('scroll', () => {
+  if (!tagEdit) return;
+  const opener = tagOpener();
+  if (!opener) return closeTagPanel(false);
+  tagEdit.opener = opener;
+  const r = opener.getBoundingClientRect();
+  if (r.bottom < 0 || r.top > innerHeight) return closeTagPanel(false);
+  return placeTagPanel();
+}, { passive: true });
+
 // Пустые состояния: заголовок, фраза, действие; примеры вписываются в поле.
 function emptyModel(d) {
   if (query) {
@@ -597,6 +902,7 @@ function render(focus = currentFocus()) {
   renderLeaf(d);
   renderWeek(d, today);
   renderPlan(d, today);
+  renderTags();
 
   renderHint();
 
@@ -737,7 +1043,7 @@ function cachedItem(todo, today) {
   }
   const lower = todo.title.toLowerCase();
   const marks = queryWords().filter((w) => lower.includes(w));
-  const key = JSON.stringify([todo, today, marks, settings.lang, openDetails.has(todo.id), menu?.id === todo.id && menu.kind, view === 'done']);
+  const key = JSON.stringify([todo, today, marks, settings.lang, openDetails.has(todo.id), menu?.id === todo.id && menu.kind, view === 'done', todo.tags.map(metaOf)]);
   const hit = rowCache.get(todo.id);
   if (hit?.key === key && !hit.li.classList.contains('is-leaving')) return hit.li;
   const li = renderItem(todo, today);
@@ -833,11 +1139,14 @@ function renderItem(todo, today) {
   for (const tag of todo.tags) {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'meta-tag';
+    const look = metaOf(tag);
+    btn.className = `meta-tag tc-${look.color}`;
     btn.dataset.tag = tag;
-    // длинная метка без пробелов обрезается многоточием, а не краем экрана
+    // длинная метка без пробелов обрезается многоточием, а не краем экрана.
+    // Со значком «#» не нужен: значок и цвет уже говорят, что это метка
     const label = document.createElement('span');
-    label.textContent = `#${tag}`;
+    label.textContent = look.icon ? tag : `#${tag}`;
+    if (look.icon) btn.append(svgIcon(`t-${look.icon}`));
     btn.append(label);
     btn.setAttribute('aria-label', t('task.tagFilter', { tag: `#${tag}` }));
     meta.append(btn);
@@ -1191,14 +1500,20 @@ function updateChips() {
   const today = todayKey();
   const parsed = currentParse();
   const { tokens } = parsed;
-  const key = JSON.stringify([settings.lang, tokens, parsed.due]);
+  const tagMetas = tokens.filter((token) => token.type === 'tag').map((token) => metaOf(token.value));
+  const key = JSON.stringify([settings.lang, tokens, parsed.due, tagMetas]);
   if (key === lastChips) return;
   lastChips = key;
   chips.replaceChildren(...tokens.map((token) => {
     const chip = document.createElement('span');
     chip.className = 'chip';
-    const icon = { date: 'calendar', priority: 'flag', tag: 'hash', repeat: 'repeat' }[token.type];
+    let icon = { date: 'calendar', priority: 'flag', tag: 'hash', repeat: 'repeat' }[token.type];
     if (token.type === 'priority') chip.classList.add(`p${token.value}`);
+    if (token.type === 'tag') {
+      const meta = metaOf(token.value);
+      chip.classList.add('is-tag', `tc-${meta.color}`);
+      if (meta.icon) icon = `t-${meta.icon}`;
+    }
     const text = document.createElement('span');
     text.textContent = chipText(token, today, parsed);
     const remove = document.createElement('button');
@@ -2267,6 +2582,7 @@ window.addEventListener('hashchange', () => {
     }
   }
   closeMenu(false);
+  closeTagPanel(false);
   openDetails.clear(); // в новом разделе всё свёрнуто
   if (query) {
     query = '';
@@ -2347,6 +2663,7 @@ function setLook(open, { focus = open ? 'panel' : null } = {}) {
   if (open) {
     closeMenu(false);
     setDataPanel(false);
+    closeTagPanel(false);
     syncLook();
     placeLook();
     if (focus === 'panel') $('[data-theme-choice][aria-checked="true"]', lookPanel)?.focus();
@@ -2417,7 +2734,10 @@ document.addEventListener('scroll', () => {
 }, { passive: true });
 
 function setDataPanel(open) {
-  if (open) setLook(false);
+  if (open) {
+    setLook(false);
+    closeTagPanel(false);
+  }
   dataPanel.hidden = !open;
   dataBtn.setAttribute('aria-expanded', String(open));
 }
@@ -2469,6 +2789,11 @@ importFile.addEventListener('change', async () => {
   const snapshot = todos;
   // в копии сохранён цвет приложения: восстанавливаем и его
   if (result.prefs?.accent && result.prefs.accent !== settings.accent) setAccent(result.prefs.accent);
+  // цвета и значки меток из копии поверх своих (свои метки, которых нет в файле, не трогаем)
+  if (result.prefs?.tagMeta) {
+    settings.tagMeta = { ...settings.tagMeta, ...result.prefs.tagMeta };
+    saveSettings(settings);
+  }
   commit(result.todos, { focus: dataBtn });
   renderBackupNudge();
   showToast(t('toast.imported', { n: result.count }), { snapshot, focus: dataBtn });
@@ -2636,6 +2961,7 @@ function openPalette() {
   closeMenu(false);
   setDataPanel(false);
   setLook(false);
+  closeTagPanel(false);
   palInput.value = '';
   renderPalette();
   palette.showModal();
@@ -2817,6 +3143,7 @@ document.addEventListener('keydown', (e) => {
 window.addEventListener('storage', (e) => {
   if (e.key === STORAGE_KEY) {
     todos = loadTodos();
+    syncMeta();
     if (editingId && !todos.some((todo) => todo.id === editingId)) editingId = null;
     // снимок для «Вернуть» сделан до чужой правки и стёр бы её
     dropUndo();

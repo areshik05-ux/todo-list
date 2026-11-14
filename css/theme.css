@@ -72,6 +72,17 @@
   --toast-action: #9cbfff;/* 8.65 */
   --scrim: rgb(18 23 34 / 0.36);
 
+  /* цвета меток (js/tags.js): фон плашки и текст со значком, от 6.1:1. Нет розового, красного
+     и янтарного, это P1, удаление и P2. Не зависят от цвета приложения */
+  --tag-teal-tint: #dbf5f2;   --tag-teal-ink: #08635a;
+  --tag-violet-tint: #f3edfc; --tag-violet-ink: #6b33cb;
+  --tag-green-tint: #e0f5e5;  --tag-green-ink: #126627;
+  --tag-indigo-tint: #edeffc; --tag-indigo-ink: #3448cc;
+  --tag-olive-tint: #eef2d3;  --tag-olive-ink: #535e0d;
+  --tag-plum-tint: #f8ecf9;   --tag-plum-ink: #88368e;
+  --tag-sky-tint: #e0f2fb;    --tag-sky-ink: #0b5f83;
+  --tag-slate-tint: #edf0f3;  --tag-slate-ink: #4a596f;
+
   --shadow-raised: 0 1px 2px rgb(18 23 34 / 0.05), 0 4px 12px rgb(18 23 34 / 0.07);
   --shadow-overlay: 0 2px 6px rgb(18 23 34 / 0.06), 0 16px 40px rgb(18 23 34 / 0.16);
 
@@ -190,6 +201,16 @@
   --toast-text: #121722;  /* 14.88 */
   --toast-action: #1a4fb0;/* 6.25 */
   --scrim: rgb(0 0 0 / 0.55);
+
+  /* метки в тёмной: тёмный оттенок фоном, светлый текстом, от 6.7:1 */
+  --tag-teal-tint: #18312f;   --tag-teal-ink: #32c9ba;
+  --tag-violet-tint: #34254d; --tag-violet-ink: #c4a7f5;
+  --tag-green-tint: #1b3221;  --tag-green-ink: #4fcc6f;
+  --tag-indigo-tint: #252a4d; --tag-indigo-ink: #a5b0f8;
+  --tag-olive-tint: #2c2f19;  --tag-olive-ink: #adbe3f;
+  --tag-plum-tint: #3e2340;   --tag-plum-ink: #df9fe3;
+  --tag-sky-tint: #19303a;    --tag-sky-ink: #61c0e8;
+  --tag-slate-tint: #272d35;  --tag-slate-ink: #aab6c6;
 
   --shadow-raised: 0 0 0 1px var(--line);
   --shadow-overlay: 0 0 0 1px #2f3644, 0 16px 40px rgb(0 0 0 / 0.55);

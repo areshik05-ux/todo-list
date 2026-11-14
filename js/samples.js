@@ -3,7 +3,8 @@
 // пример: пока человек его не трогал, он переводится вместе с интерфейсом
 // и убирается кнопкой «Убрать примеры». Любое действие с примером (правка,
 // отметка, перенос, шаг) делает его обычной задачей, см. own() в todos.js.
-// Ничего просроченного: в первый день не за что себя винить.
+// Ничего просроченного: в первый день не за что себя винить. У каждого примера метка
+// со своим цветом и значком (поездка, здоровье, дела): видно, что список можно сделать своим.
 
 import { addTodo } from './todos.js';
 import { addDays } from './dates.js';
@@ -15,11 +16,11 @@ function texts(sample, t) {
       return {
         title: t('sample.trip'),
         notes: t('sample.tripNote'),
-        tags: [],
+        tags: [t('sample.tripTag')],
         steps: [t('sample.tripStep1'), t('sample.tripStep2'), t('sample.tripStep3')],
       };
     case 'stretch':
-      return { title: t('sample.stretch'), notes: t('sample.stretchNote'), tags: [], steps: [] };
+      return { title: t('sample.stretch'), notes: t('sample.stretchNote'), tags: [t('sample.stretchTag')], steps: [] };
     case 'bank':
       return { title: t('sample.bank'), notes: t('sample.bankNote'), tags: [t('sample.bankTag')], steps: [] };
     default:

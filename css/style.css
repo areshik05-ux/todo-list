@@ -217,7 +217,7 @@ kbd {
     height: 100dvh;
     grid-template-columns: 1fr;
     grid-template-rows: auto auto 1fr auto;
-    grid-template-areas: "brand" "views" "." "tools";
+    grid-template-areas: "brand" "views" "tags" "tools";
     align-items: start;
     gap: 24px;
     padding: 28px 16px 20px;
@@ -1544,15 +1544,22 @@ button.meta-due[aria-expanded="true"] {
 .meta-priority.p2 { color: var(--p2); }
 .meta-priority.p3 .icon { color: var(--p3); }
 
+/* метка в строке: плашка своего цвета, значок и имя. Цвет не единственный признак: имя всегда видно */
 .meta-tag {
   display: inline-flex;
   align-items: center;
+  gap: 4px;
   min-height: 24px;
   max-width: 100%;
   min-width: 0;
   margin: -3px 0;
-  color: var(--text-2);
+  padding: 0 6px;
+  border-radius: var(--r-xs);
+  background: var(--tag-tint, color-mix(in srgb, var(--text) 5%, transparent));
+  color: var(--tag-ink, var(--text-2));
+  font-size: var(--fs-meta);
   text-decoration: none;
+  transition: background-color var(--dur-3) var(--ease-out);
 }
 
 .meta-tag span {
@@ -1564,9 +1571,311 @@ button.meta-due[aria-expanded="true"] {
 }
 
 .meta-tag:hover {
-  color: var(--text);
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+
+/* сделанная задача тихая: метка серой плашкой, как срок */
+.todo.is-done .meta-tag {
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+  color: var(--text-2);
+}
+
+/* цвета меток: фон и текст из theme.css, у каждой темы свои */
+.tc-teal { --tag-tint: var(--tag-teal-tint); --tag-ink: var(--tag-teal-ink); }
+.tc-violet { --tag-tint: var(--tag-violet-tint); --tag-ink: var(--tag-violet-ink); }
+.tc-green { --tag-tint: var(--tag-green-tint); --tag-ink: var(--tag-green-ink); }
+.tc-indigo { --tag-tint: var(--tag-indigo-tint); --tag-ink: var(--tag-indigo-ink); }
+.tc-olive { --tag-tint: var(--tag-olive-tint); --tag-ink: var(--tag-olive-ink); }
+.tc-plum { --tag-tint: var(--tag-plum-tint); --tag-ink: var(--tag-plum-ink); }
+.tc-sky { --tag-tint: var(--tag-sky-tint); --tag-ink: var(--tag-sky-ink); }
+.tc-slate { --tag-tint: var(--tag-slate-tint); --tag-ink: var(--tag-slate-ink); }
+
+/* распознанная метка в поле ввода тоже своим цветом: видно, какой она станет */
+.chip.is-tag {
+  background: var(--tag-tint);
+  color: var(--tag-ink);
+}
+
+/* Метки как списки. На компьютере блок в боковой панели под разделами */
+.tags-side {
+  display: none;
+}
+
+.side-title {
+  margin: 0 10px 6px;
+  color: var(--text-2);
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  line-height: 16px;
+}
+
+.tag-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tag-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border-radius: var(--r-sm);
+  transition: background-color var(--dur-1) var(--ease-out);
+}
+
+.tag-link {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 6px 0 10px;
+  border-radius: var(--r-sm);
+  color: var(--text);
+  font-size: var(--fs-small);
+  line-height: 20px;
+  text-align: left;
+}
+
+.tag-link .icon {
+  width: 18px;
+  height: 18px;
+  justify-self: center;
+  color: var(--tag-ink);
+}
+
+/* метка без значка: точка её цвета */
+.tag-dot {
+  justify-self: center;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tag-ink);
+}
+
+.tag-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-count {
+  color: var(--text-3);
+  font-size: var(--fs-meta);
+}
+
+@media (hover: hover) {
+  .tag-item:hover { background: var(--hover); }
+}
+
+/* фильтр по метке включён: её фон, имя её цветом и жирнее */
+.tag-item.is-current {
+  background: var(--tag-tint);
+}
+
+.tag-item.is-current .tag-link {
+  color: var(--tag-ink);
+  font-weight: 600;
+}
+
+.tag-item.is-current .tag-count {
+  color: var(--tag-ink);
+}
+
+.tag-more {
+  width: 28px;
+  height: 28px;
+  margin-right: 2px;
+}
+
+.tag-more .icon {
+  width: 18px;
+  height: 18px;
+}
+
+/* «⋯» метки появляется при наведении и фокусе, как кнопки строки задачи */
+@media (hover: hover) and (pointer: fine) {
+  .tag-more {
+    opacity: 0;
+    transition: opacity var(--dur-1) var(--ease-out);
+  }
+
+  .tag-item:hover .tag-more,
+  .tag-item:focus-within .tag-more,
+  .tag-more[aria-expanded="true"] {
+    opacity: 1;
+  }
+}
+
+.tags-toggle {
+  justify-self: start;
+  margin-left: 10px;
+}
+
+@media (min-width: 960px) {
+  .tags-side {
+    grid-area: tags;
+    display: grid;
+    align-content: start;
+    gap: 2px;
+    min-width: 0;
+  }
+}
+
+/* На телефоне и в узком окне: строка меток над списком в «Все», листается вбок внутри себя */
+.tag-row {
+  display: flex;
+  gap: 6px;
+  margin: 0 0 16px;
+  padding: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+
+.tag-row::-webkit-scrollbar {
+  display: none;
+}
+
+.tag-row .tag-link {
+  flex: none;
+  display: inline-flex;
+  gap: 6px;
+  min-height: var(--hit);
+  max-width: 220px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.tag-row .tag-link[aria-pressed="true"] {
+  border-color: transparent;
+  background: var(--tag-tint);
+  color: var(--tag-ink);
+  font-weight: 600;
+}
+
+.tag-row .tag-link[aria-pressed="true"] .tag-count {
+  color: var(--tag-ink);
+}
+
+.tag-row .tag-link:focus-visible {
+  outline-offset: -2px;
+}
+
+@media (min-width: 960px) {
+  .tag-row {
+    display: none;
+  }
+}
+
+.tag-actions {
+  margin-top: 2px;
+}
+
+/* заголовок «#дом» при фильтре по метке: значок её цвета перед именем */
+h1 .title-icon {
+  width: 0.9em;
+  height: 0.9em;
+  margin-right: 0.25em;
+  vertical-align: -0.1em;
+  color: var(--tag-ink);
+  stroke-width: 1.8;
+}
+
+/* Окно «Цвет и значок метки» */
+.tag-panel {
+  position: fixed;
+  z-index: 30;
+  top: 0;
+  left: 0;
+  width: 300px;
+  max-width: calc(100vw - 24px);
+  padding: 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--raised);
+  box-shadow: var(--shadow-overlay);
+  animation: menu-in var(--dur-2) var(--ease-out);
+}
+
+.tag-panel-title {
+  overflow-wrap: anywhere;
+}
+
+.tag-colors {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.tag-icons {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(36px, 1fr));
+  gap: 4px;
+}
+
+.tag-color,
+.tag-icon {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  height: 36px;
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+}
+
+@media (hover: hover) {
+  .tag-color:hover,
+  .tag-icon:hover {
+    background: var(--hover);
+    color: var(--text);
+  }
+}
+
+.tag-sw {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--tag-ink);
+}
+
+/* выбранное: кольцо и фон, а не только цвет */
+.tag-color[aria-checked="true"] .tag-sw {
+  box-shadow: 0 0 0 2px var(--raised), 0 0 0 4px var(--tag-ink);
+}
+
+.tag-icon[aria-checked="true"] {
+  background: var(--tag-tint, var(--blue-tint));
+  color: var(--tag-ink, var(--blue-ink));
+  box-shadow: inset 0 0 0 1.5px currentColor;
+}
+
+.tag-panel-foot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+@media (pointer: coarse) {
+  .tag-colors { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .tag-icons { grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); }
+  .tag-color, .tag-icon { height: 44px; }
+  .tag-more { width: 44px; height: 44px; }
+}
+
+@media (max-width: 359px) {
+  .tag-panel { padding: 8px; }
 }
 
 .todo-actions {
