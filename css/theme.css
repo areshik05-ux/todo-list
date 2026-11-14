@@ -318,15 +318,16 @@
   --pink-tint: #421c24;
 }
 
-/* Коралл */
+/* Коралл. Текст и линия уведены в рыже-коричневый: красный (--danger) значит удаление и ошибку,
+   «Сегодня» и ссылки не должны на него походить (разница с ним от ΔE 20, проверяет contrast.test.js) */
 :root[data-accent="coral"] {
   --blue: #f38266;
   --blue-hover: #f16d4b;
   --on-blue: #2f130c;
-  --accent-line: #ca340f;
-  --blue-ink: #b32e0d;
-  --blue-tint: #fbece9;
-  --mark: #f7d9d1;
+  --accent-line: #ad5410;
+  --blue-ink: #8f4a12;
+  --blue-tint: #fcefe6;
+  --mark: #f8dccb;
   --toast-action: #f89b83;
   --pink: #307bdd;
   --pink-hover: #216bcb;
@@ -339,7 +340,7 @@
   --blue-hover: #f7a38f;
   --on-blue: #2f130c;
   --accent-line: #f4886e;
-  --blue-ink: #f8b4a2;
+  --blue-ink: #f7bf98;
   --blue-tint: #3e211a;
   --mark: #603125;
   --toast-action: #b22f0e;

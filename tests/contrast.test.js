@@ -120,3 +120,30 @@ test('в тёмной теме каждого цвета свои значени
     assert.deepEqual(Object.keys(dark).sort(), Object.keys(light).sort(), accent);
   }
 });
+
+// CIE Lab и разница цветов ΔE (CIE76): насколько два цвета видны разными, а не только контраст к фону
+function lab(hex) {
+  const n = hex.replace('#', '');
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(n.slice(i, i + 2), 16) / 255)
+    .map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+  const f = (t) => (t > 216 / 24389 ? Math.cbrt(t) : (24389 / 27 * t + 16) / 116);
+  const x = f((0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047);
+  const y = f(0.2126 * r + 0.7152 * g + 0.0722 * b);
+  const z = f((0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883);
+  return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
+}
+export const deltaE = (a, b) => Math.hypot(...lab(a).map((v, i) => v - lab(b)[i]));
+
+test('текст цветом приложения не похож на красный удаления: ΔE от 20 в обеих темах', () => {
+  const fails = [];
+  for (const accent of ACCENTS) {
+    for (const theme of ['light', 'dark']) {
+      const tk = tokens(theme, accent);
+      const d = deltaE(tk['--blue-ink'], tk['--danger']);
+      if (d < 20) fails.push(`${accent}/${theme}: --blue-ink ${tk['--blue-ink']} и --danger ${tk['--danger']}, ΔE ${d.toFixed(1)}`);
+    }
+  }
+  assert.deepEqual(fails, []);
+  // старый коралловый текст (#b32e0d) был почти красным: проверка его бы поймала
+  assert.ok(deltaE('#b32e0d', '#b42f2a') < 20);
+});
