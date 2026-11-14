@@ -1531,8 +1531,10 @@ button.meta-due[aria-expanded="true"] {
   background: color-mix(in srgb, var(--text) 10%, transparent);
 }
 
-.meta-due.is-today {
-  color: var(--blue-ink);
+/* «Сегодня» отличает значок цветом приложения, а текст и подложка серые, как у остальных сроков:
+   цветная плашка в строке одна, это метка (иначе в Сирени срок и фиолетовая метка одного цвета) */
+.meta-due.is-today .icon {
+  color: var(--accent-line);
 }
 
 /* просроченное без красного: часы назад и обычный цвет текста */
@@ -1726,9 +1728,31 @@ button.meta-due[aria-expanded="true"] {
     gap: 2px;
     min-width: 0;
   }
+
+  /* раскрытый длинный список листается внутри себя: кнопки внизу панели не уезжают за экран */
+  .side:has(.tags-side.is-expanded) {
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+  }
+
+  .tags-side.is-expanded {
+    align-self: stretch;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    min-height: 0;
+  }
+
+  .tags-side.is-expanded .tag-list {
+    align-content: start;
+    min-height: 0;
+    margin: -4px;
+    padding: 4px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
 }
 
-/* На телефоне и в узком окне: строка меток над списком в «Все», листается вбок внутри себя */
+/* На телефоне и в узком окне: строка меток над списком в «Все». Пальцем листается вбок внутри себя,
+   и у края, за которым есть ещё метки, гаснет (app.js ставит fade-start и fade-end). С мышью
+   колёсиком вбок не прокрутить: там метки переносятся на новые строки (.is-wrapped) */
 .tag-row {
   display: flex;
   gap: 6px;
@@ -1741,6 +1765,45 @@ button.meta-due[aria-expanded="true"] {
 
 .tag-row::-webkit-scrollbar {
   display: none;
+}
+
+.tag-row.is-wrapped {
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
+.tag-row.fade-end {
+  mask-image: linear-gradient(to right, currentColor calc(100% - 40px), transparent);
+}
+
+.tag-row.fade-start {
+  mask-image: linear-gradient(to left, currentColor calc(100% - 40px), transparent);
+}
+
+.tag-row.fade-start.fade-end {
+  mask-image: linear-gradient(to right, transparent, currentColor 40px, currentColor calc(100% - 40px), transparent);
+}
+
+/* метка в фокусе с клавиатуры видна целиком, с кольцом */
+.tag-row:has(:focus-visible) {
+  mask-image: none;
+}
+
+.tag-row-toggle {
+  flex: none;
+  min-height: var(--hit);
+  padding: 0 10px;
+  border-radius: var(--r-sm);
+  color: var(--blue-ink);
+  font-size: var(--fs-small);
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+  text-underline-offset: 3px;
+}
+
+.tag-row-toggle:hover {
+  text-decoration-color: currentColor;
 }
 
 .tag-row .tag-link {
@@ -2044,6 +2107,21 @@ h1 .title-icon {
 
   .lang button { height: 44px; min-width: 44px; }
   .handle { width: 28px; }
+}
+
+/* Телефон: строка под названием задачи чаще остаётся одной. Промежутки меньше, у шагов без стрелки
+   (кнопка и так на подложке), а в «Сегодня» у срока «Сегодня» только значок: заголовок группы
+   «На сегодня» уже говорит то же самое, полное «Срок: сегодня» есть в имени кнопки */
+@media (max-width: 480px) {
+  .todo-meta { column-gap: 8px; }
+  .meta-details .meta-chevron { display: none; }
+
+  .main.is-today:not(.is-search) .meta-due.is-today {
+    justify-content: center;
+    min-width: 32px;
+  }
+
+  .main.is-today:not(.is-search) .meta-due.is-today > span { display: none; }
 }
 
 .meta-details:hover {

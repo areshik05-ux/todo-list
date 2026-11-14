@@ -16,8 +16,8 @@ import { sampleTodos, translateSamples } from './samples.js';
 import { toICS, icsFileName, ICS_TYPE } from './calendar.js';
 import { backupNudge, markBackup, readLastBackup, daysSince, requestPersist } from './backup.js';
 import { createInstall, launchAction } from './install.js';
-import { ACCENTS, cleanAccent, stepChoice } from './accents.js';
-import { syncTagMeta, setTagMeta, metaFor, tagStats, tagOfQuery, tagKey, tagsInOrder } from './tags.js';
+import { ACCENTS, cleanAccent, gridStep, DEFAULT_ACCENT } from './accents.js';
+import { syncTagMeta, setTagMeta, metaFor, tagStats, tagOfQuery, tagKey, tagsInOrder, mergeImportedMeta } from './tags.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -84,6 +84,7 @@ const PLAN_SHORT = 3; // столько предложений видно сра
 const PLAN_MAX = 10; // больше не показываем, дальше ссылка на «Все»
 const CHECK_MS = 700; // столько живёт анимация отметки у строки
 const TAGS_SHORT = 7; // столько меток видно в боковой панели сразу, остальные за «Ещё N»
+const PHONE_POPOVER = 480; // уже этого окна «Оформление» и «Цвет и значок» во всю ширину экрана
 
 const firstVisit = isFirstVisit();
 const loaded = loadTodosReport();
@@ -116,6 +117,16 @@ function metaOf(tag) {
   const key = tagKey(tag);
   if (Object.hasOwn(settings.tagMeta, key)) return settings.tagMeta[key];
   return metaFor(settings.tagMeta, tag, tagsInOrder(todos).map(tagKey));
+}
+
+// Список меток считается один раз на версию списка задач: шапка, боковая панель и строка
+// в «Все» берут его отсюда (с 200 метками пересчёт на каждую перерисовку был заметен).
+let statsMemo = { todos: null, lang: null, stats: [] };
+function currentTagStats() {
+  if (statsMemo.todos !== todos || statsMemo.lang !== settings.lang) {
+    statsMemo = { todos, lang: settings.lang, stats: tagStats(todos, settings.lang) };
+  }
+  return statsMemo.stats;
 }
 
 let view = viewFromHash();
@@ -309,7 +320,7 @@ function renderHeader(d, total) {
   searchToggle.setAttribute('aria-expanded', String(main.classList.contains('tools-open') || Boolean(query)));
   // поиск «#дом» по существующей метке: заголовок = метка, рядом «Цвет и значок»
   const tagQ = tagOfQuery(query);
-  const tagRowStat = tagQ ? tagStats(todos).find((r) => r.key === tagKey(tagQ)) : null;
+  const tagRowStat = tagQ ? currentTagStats().find((r) => r.key === tagKey(tagQ)) : null;
   const title = tagRowStat ? `#${tagRowStat.tag}` : query ? t('view.search') : t(`view.${view}`);
   tagActions.hidden = !tagRowStat;
   viewTitle.className = tagRowStat ? `is-tag tc-${metaOf(tagRowStat.tag).color}` : '';
@@ -505,6 +516,8 @@ function renderPlan(d, today) {
 
 let tagsExpanded = false; // «Ещё N»: видны все метки
 let tagsKey = '';
+// мышь: строка меток переносится на новые строки (колёсиком вбок её не прокрутить), палец: листается вбок
+const rowWraps = matchMedia('(hover: hover) and (pointer: fine)');
 
 function tagButton(row, current) {
   const meta = metaOf(row.tag);
@@ -531,17 +544,18 @@ function tagButton(row, current) {
 }
 
 function renderTags() {
-  const stats = tagStats(todos, settings.lang);
+  const stats = currentTagStats();
   const currentKey = tagKey(tagOfQuery(query) ?? '');
   const showRow = view === 'all' && (!query || stats.some((r) => r.key === currentKey));
   const editing = tagEdit?.kind === 'side' ? tagEdit.key : null;
-  const key = JSON.stringify([stats, currentKey, stats.map((r) => metaOf(r.tag)), settings.lang, tagsExpanded, showRow, editing]);
+  const wraps = rowWraps.matches;
+  const key = JSON.stringify([stats, currentKey, stats.map((r) => metaOf(r.tag)), settings.lang, tagsExpanded, showRow, editing, wraps]);
   if (key === tagsKey) return;
   tagsKey = key;
   // фокус был на метке: после перерисовки он на той же метке
   const active = document.activeElement;
   const refocus = active && (tagList.contains(active) || tagRow.contains(active))
-    ? { tag: active.dataset.tag, more: active.classList.contains('tag-more'), row: tagRow.contains(active) } : null;
+    ? { tag: active.dataset.tag, more: active.classList.contains('tag-more'), toggle: active.classList.contains('tag-row-toggle'), row: tagRow.contains(active) } : null;
 
   tagsSide.hidden = !stats.length;
   let shown = tagsExpanded ? stats : stats.slice(0, TAGS_SHORT);
@@ -550,6 +564,8 @@ function renderTags() {
     const cur = stats.find((r) => r.key === currentKey);
     if (cur) shown = [...shown, cur];
   }
+  // раскрытый длинный список листается внутри своего блока: кнопки внизу панели остаются на экране
+  tagsSide.classList.toggle('is-expanded', tagsExpanded && stats.length > TAGS_SHORT);
   tagList.replaceChildren(...shown.map((row) => {
     const current = row.key === currentKey;
     const li = document.createElement('li');
@@ -573,16 +589,44 @@ function renderTags() {
   tagsToggle.setAttribute('aria-expanded', String(tagsExpanded));
 
   tagRow.hidden = !(showRow && stats.length);
-  tagRow.replaceChildren(...(tagRow.hidden ? [] : stats.map((row) => tagButton(row, row.key === currentKey))));
+  // с мышью строка переносится, поэтому длинная сворачивается, как в боковой панели
+  const rowShown = wraps ? shown : stats;
+  const rowItems = tagRow.hidden ? [] : rowShown.map((row) => tagButton(row, row.key === currentKey));
+  if (!tagRow.hidden && wraps && stats.length > TAGS_SHORT) {
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'tag-row-toggle';
+    toggle.setAttribute('aria-expanded', String(tagsExpanded));
+    toggle.textContent = tagsExpanded ? t('tags.less') : t('tags.more', { n: stats.length - TAGS_SHORT });
+    rowItems.push(toggle);
+  }
+  tagRow.replaceChildren(...rowItems);
+  tagRow.classList.toggle('is-wrapped', wraps);
+  updateRowFade();
 
   if (refocus) {
     const box = refocus.row ? tagRow : tagList;
-    const sel = refocus.more ? '.tag-more' : '.tag-link';
-    const target = [...box.querySelectorAll(sel)].find((el) => el.dataset.tag === refocus.tag);
+    const sel = refocus.toggle ? '.tag-row-toggle' : refocus.more ? '.tag-more' : '.tag-link';
+    const target = refocus.toggle ? box.querySelector(sel) : [...box.querySelectorAll(sel)].find((el) => el.dataset.tag === refocus.tag);
     if (target) target.focus({ preventScroll: true });
   }
   if (tagEdit) tagEdit.opener = tagOpener();
 }
+
+// Строка меток на телефоне: у края, за которым есть ещё метки, она мягко гаснет.
+function updateRowFade() {
+  const cut = !tagRow.hidden && !rowWraps.matches && tagRow.scrollWidth > tagRow.clientWidth + 1;
+  const start = cut && tagRow.scrollLeft > 1;
+  const end = cut && tagRow.scrollLeft + tagRow.clientWidth < tagRow.scrollWidth - 1;
+  tagRow.classList.toggle('fade-start', start);
+  tagRow.classList.toggle('fade-end', end);
+}
+tagRow.addEventListener('scroll', updateRowFade, { passive: true });
+window.addEventListener('resize', updateRowFade);
+rowWraps.addEventListener('change', () => {
+  tagsKey = '';
+  renderTags();
+});
 
 // Клик по метке в списке: фильтр по ней; по уже выбранной: фильтр снимается.
 function toggleTagFilter(btn) {
@@ -602,6 +646,10 @@ for (const box of [tagList, tagRow]) {
     const more = e.target.closest('.tag-more');
     if (link) toggleTagFilter(link);
     else if (more) openTagPanel(more.dataset.tag, more, 'side');
+    else if (e.target.closest('.tag-row-toggle')) {
+      tagsExpanded = !tagsExpanded;
+      renderTags();
+    }
   });
 }
 
@@ -644,13 +692,19 @@ function placeTagPanel() {
   const opener = tagEdit.opener;
   if (!opener?.isConnected) return;
   const r = opener.getBoundingClientRect();
-  const w = Math.min(300, innerWidth - 24);
+  // телефон: во всю ширину с отступом 12 px, как окно «Оформление»
+  const phone = innerWidth < PHONE_POPOVER;
+  const w = phone ? innerWidth - 24 : Math.min(300, innerWidth - 24);
   tagPanel.style.width = `${w}px`;
   tagPanel.style.maxHeight = `${innerHeight - 24}px`;
   const h = tagPanel.offsetHeight;
   let left;
   let top;
-  if (tagEdit.kind === 'side') {
+  if (phone) {
+    left = 12;
+    const below = r.bottom + 6 + h <= innerHeight - 12;
+    top = below ? r.bottom + 6 : Math.max(12, Math.min(r.top - 6 - h, innerHeight - h - 12));
+  } else if (tagEdit.kind === 'side') {
     // справа от боковой панели, на высоте метки
     left = Math.min(r.right + 8, innerWidth - w - 12);
     top = Math.max(12, Math.min(r.top - 12, innerHeight - h - 12));
@@ -725,19 +779,43 @@ tagPanel.addEventListener('keydown', (e) => {
     closeTagPanel(true);
     return;
   }
+  // Окно стоит в конце страницы, а по смыслу оно рядом со своей кнопкой (WCAG 2.4.3):
+  // Tab после «Готово» закрывает его и ведёт к тому, что идёт за кнопкой, Shift+Tab с первой
+  // группы возвращает на саму кнопку
+  if (e.key === 'Tab' && !e.altKey && !e.ctrlKey && !e.metaKey) {
+    const stops = tabStops(tagPanel);
+    const edge = e.shiftKey ? stops[0] : stops[stops.length - 1];
+    if (e.target !== edge) return;
+    e.preventDefault();
+    if (e.shiftKey) {
+      closeTagPanel(true);
+      return;
+    }
+    const opener = tagOpener() ?? tagEdit.opener;
+    closeTagPanel(false);
+    (nextStopAfter(opener) ?? opener ?? viewTitle).focus();
+    return;
+  }
   const btn = e.target.closest('[data-color], [data-icon]');
   if (!btn) return;
   const group = btn.hasAttribute('data-color') ? $$('[data-color]', tagPanel) : $$('[data-icon]', tagPanel);
-  const cols = columnsOf(group);
-  const step = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: cols, ArrowUp: -cols, Home: -Infinity, End: Infinity }[e.key];
-  if (step === undefined) return;
+  const to = gridStep(group.indexOf(btn), group.length, columnsOf(group), e.key);
+  if (to === null) return;
   e.preventDefault();
-  const at = group.indexOf(btn);
-  let to = Number.isFinite(step) ? at + step : step < 0 ? 0 : group.length - 1;
-  if (Math.abs(step) === 1) to = (to + group.length) % group.length;
-  else to = Math.max(0, Math.min(group.length - 1, to));
   group[to].click();
 });
+
+// Куда идёт Tab: видимые элементы, до которых он доходит, в порядке страницы.
+const TABBABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]';
+function tabStops(root = document) {
+  return $$(TABBABLE, root).filter((el) => el.tabIndex >= 0 && el.getClientRects().length && !el.closest('[hidden], [inert]'));
+}
+
+function nextStopAfter(el) {
+  if (!el?.isConnected) return null;
+  return tabStops().find((x) => !tagPanel.contains(x)
+    && (el.compareDocumentPosition(x) & Node.DOCUMENT_POSITION_FOLLOWING) && !el.contains(x)) ?? null;
+}
 
 document.addEventListener('click', (e) => {
   if (!tagEdit) return;
@@ -746,21 +824,33 @@ document.addEventListener('click', (e) => {
 });
 
 tagPanel.addEventListener('focusout', (e) => {
-  if (!tagEdit || !e.relatedTarget) return;
-  if (tagPanel.contains(e.relatedTarget) || e.relatedTarget === tagEdit.opener) return;
-  closeTagPanel(false);
+  if (!tagEdit) return;
+  if (e.relatedTarget) {
+    if (tagPanel.contains(e.relatedTarget) || e.relatedTarget === tagEdit.opener) return;
+    closeTagPanel(false);
+    return;
+  }
+  // фокус ушёл никуда (за край страницы): окно не должно остаться висеть. Переключение
+  // на другое окно браузера не считается, и клик по самому окну тоже
+  setTimeout(() => {
+    if (!tagEdit || !document.hasFocus()) return;
+    const now = document.activeElement;
+    if (tagPanel.contains(now) || now === tagEdit.opener) return;
+    closeTagPanel(false);
+  }, 0);
 });
 
 window.addEventListener('resize', placeTagPanel);
-document.addEventListener('scroll', () => {
-  if (!tagEdit) return;
+// capture: прокрутка самой боковой панели или списка меток тоже двигает окно
+document.addEventListener('scroll', (e) => {
+  if (!tagEdit || e.target === tagPanel) return;
   const opener = tagOpener();
   if (!opener) return closeTagPanel(false);
   tagEdit.opener = opener;
   const r = opener.getBoundingClientRect();
   if (r.bottom < 0 || r.top > innerHeight) return closeTagPanel(false);
   return placeTagPanel();
-}, { passive: true });
+}, { passive: true, capture: true });
 
 // Пустые состояния: заголовок, фраза, действие; примеры вписываются в поле.
 function emptyModel(d) {
@@ -2234,12 +2324,13 @@ function moveByKeyboard(li, step, focusSelector = null) {
 
 /* Отмена и сообщения */
 
-// snapshot: список до действия (для «Вернуть»); focus: куда вернуть фокус после отмены.
+// snapshot: список до действия (для «Вернуть»); prefs: цвет приложения и словарь меток до действия
+// (загрузка из файла их меняет); focus: куда вернуть фокус после отмены.
 // Текст дублируем в постоянную live-область: скринридеры не всегда читают
 // только что показанный элемент.
 // action: другая кнопка вместо «Вернуть» ({ label, run }), например «Отметить».
 // say: что прочесть скринридеру, если это больше текста сообщения (итог дня).
-function showToast(message, { snapshot = null, focus = null, action = null, say = message } = {}) {
+function showToast(message, { snapshot = null, prefs = null, focus = null, action = null, say = message } = {}) {
   dropUndo();
   // цели нет: возвращаемся туда, где был фокус до сообщения
   const was = document.activeElement;
@@ -2254,7 +2345,7 @@ function showToast(message, { snapshot = null, focus = null, action = null, say 
   document.documentElement.style.setProperty('scroll-padding-bottom', `${room}px`);
   holdToastRoom(room);
   announce(say);
-  undo = { snapshot, focus, action, timer: setTimeout(dropUndo, TOAST_MS) };
+  undo = { snapshot, prefs, focus, action, timer: setTimeout(dropUndo, TOAST_MS) };
 }
 
 function dropUndo() {
@@ -2304,7 +2395,13 @@ function releaseToastRoom() {
 
 function applyUndo() {
   if (!undo?.snapshot) return;
-  const { snapshot: raw, focus } = undo;
+  const { snapshot: raw, prefs, focus } = undo;
+  if (prefs) {
+    settings.tagMeta = prefs.tagMeta;
+    settings.accent = prefs.accent;
+    saveSettings(settings);
+    applyAccent();
+  }
   // примеры возвращаются на текущем языке интерфейса
   const snapshot = translateSamples(raw, t);
   // редактор остаётся открытым с тем, что в нём набрано, если задача на месте
@@ -2615,11 +2712,31 @@ for (const btn of $$('[data-lang]')) {
     applyLanguage();
     const translated = translateSamples(todos, t);
     if (translated !== todos) {
+      carrySampleTagMeta(todos, translated);
       todos = translated;
       persist();
     }
     render();
   });
+}
+
+// Примеры переводятся вместе с метками («поездка» ↔ «trip»): свой цвет и значок метки
+// переходят к её переводу, а не теряются.
+function carrySampleTagMeta(before, after) {
+  const byId = new Map(after.map((todo) => [todo.id, todo]));
+  let meta = settings.tagMeta;
+  for (const todo of before) {
+    const next = byId.get(todo.id);
+    if (!todo.sample || !next) continue;
+    todo.tags.forEach((tag, i) => {
+      const to = next.tags[i];
+      if (!to || tagKey(to) === tagKey(tag) || !Object.hasOwn(meta, tagKey(tag))) return;
+      meta = setTagMeta(meta, to, meta[tagKey(tag)]);
+    });
+  }
+  if (meta === settings.tagMeta) return;
+  settings.tagMeta = meta;
+  saveSettings(settings);
 }
 
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
@@ -2636,21 +2753,28 @@ function placeLook() {
   if (!lookOpen()) return;
   const r = lookBtn.getBoundingClientRect();
   const wide = matchMedia('(min-width: 960px)').matches;
-  const w = Math.min(300, innerWidth - 24);
+  // телефон: во всю ширину с отступом 12 px; узкое окно компьютера: по размеру, у кнопки
+  const phone = innerWidth < PHONE_POPOVER;
+  const w = phone ? innerWidth - 24 : Math.min(wide ? 300 : 320, innerWidth - 24);
   let left;
   let top;
-  lookPanel.style.width = wide ? `${w}px` : `${innerWidth - 24}px`;
+  lookPanel.style.width = `${w}px`;
+  lookPanel.style.maxHeight = 'none';
+  const full = lookPanel.offsetHeight;
   if (wide) {
     // над рядом кнопок внизу боковой панели, от её левого края; не влезает по высоте: прокрутка внутри
     const side = lookBtn.closest('.side-tools').getBoundingClientRect();
     left = Math.max(12, Math.min(side.left, innerWidth - w - 12));
-    lookPanel.style.maxHeight = `${Math.max(160, r.top - 18)}px`;
-    top = Math.max(12, r.top - 6 - lookPanel.offsetHeight);
+    const room = r.top - 18;
+    top = room < Math.min(full, 160) ? 12 : Math.max(12, r.top - 6 - full);
+    lookPanel.style.maxHeight = `${room < Math.min(full, 160) ? innerHeight - 24 : room}px`;
   } else {
-    // телефон: под верхней строкой, по 12 px от краёв
-    left = 12;
+    // под верхней строкой. Мало места снизу (масштаб 400%, повёрнутый телефон): окно
+    // поднимается поверх кнопки и целиком остаётся на экране, лишнее листается внутри
+    left = phone ? 12 : Math.max(12, Math.min(r.right - w, innerWidth - w - 12));
     top = r.bottom + 6;
-    lookPanel.style.maxHeight = `${Math.max(160, innerHeight - top - 12)}px`;
+    if (innerHeight - top - 12 < Math.min(full, 160)) top = Math.max(12, innerHeight - 12 - full);
+    lookPanel.style.maxHeight = `${innerHeight - top - 12}px`;
   }
   lookPanel.style.left = `${left}px`;
   lookPanel.style.top = `${top}px`;
@@ -2687,7 +2811,6 @@ lookPanel.addEventListener('click', (e) => {
 });
 
 // Стрелки внутри группы: следующий вариант выбирается сразу (как у обычных переключателей)
-const THEME_CHOICES = ['light', 'dark', 'auto'];
 lookPanel.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     e.preventDefault();
@@ -2695,24 +2818,18 @@ lookPanel.addEventListener('keydown', (e) => {
     setLook(false, { focus: 'button' });
     return;
   }
-  const delta = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
-  if (!delta) return;
-  const theme = e.target.closest('[data-theme-choice]');
-  const accent = e.target.closest('[data-accent-choice]');
-  if (!theme && !accent) return;
+  const btn = e.target.closest('[data-theme-choice], [data-accent-choice]');
+  if (!btn) return;
+  // как в окне метки: влево и вправо по кругу, вверх и вниз на ряд (тема в один ряд: как влево и вправо),
+  // Home и End на первый и последний вариант
+  const group = btn.hasAttribute('data-theme-choice') ? $$('[data-theme-choice]', lookPanel) : $$('[data-accent-choice]', lookPanel);
+  const to = gridStep(group.indexOf(btn), group.length, columnsOf(group), e.key);
+  if (to === null) return;
   e.preventDefault();
-  if (theme) {
-    const next = stepChoice(THEME_CHOICES, theme.dataset.themeChoice, delta);
-    setTheme(next);
-    $(`[data-theme-choice="${next}"]`, lookPanel).focus();
-  } else {
-    // в сетке из двух колонок вверх и вниз идут через колонку
-    const step = e.key === 'ArrowDown' || e.key === 'ArrowUp' ? delta * 2 : delta;
-    const at = ACCENTS.indexOf(accent.dataset.accentChoice);
-    const next = ACCENTS[(at + step + ACCENTS.length * 2) % ACCENTS.length];
-    setAccent(next);
-    $(`[data-accent-choice="${next}"]`, lookPanel).focus();
-  }
+  const next = group[to];
+  if (next.dataset.themeChoice) setTheme(next.dataset.themeChoice);
+  else setAccent(next.dataset.accentChoice);
+  next.focus();
 });
 
 document.addEventListener('click', (e) => {
@@ -2787,16 +2904,27 @@ importFile.addEventListener('change', async () => {
     return;
   }
   const snapshot = todos;
-  // в копии сохранён цвет приложения: восстанавливаем и его
-  if (result.prefs?.accent && result.prefs.accent !== settings.accent) setAccent(result.prefs.accent);
-  // цвета и значки меток из копии поверх своих (свои метки, которых нет в файле, не трогаем)
+  // «Вернуть» возвращает и оформление: цвет приложения и словарь меток до загрузки
+  const prefs = { accent: settings.accent, tagMeta: settings.tagMeta };
+  let message = t('toast.imported', { n: result.count });
+  // цвет приложения из копии ставим, только если свой человек не выбирал (кобальт), и говорим об этом
+  const accent = result.prefs?.accent;
+  if (accent && accent !== settings.accent && settings.accent === DEFAULT_ACCENT) {
+    setAccent(accent);
+    message = t('toast.importedAccent', { tasks: message, name: t(`accent.${accent}`) });
+  }
+  // цвета и значки меток из копии только для новых меток: свой выбор важнее; записи для меток,
+  // которых нет ни в одной задаче, не берём
   if (result.prefs?.tagMeta) {
-    settings.tagMeta = { ...settings.tagMeta, ...result.prefs.tagMeta };
-    saveSettings(settings);
+    const merged = mergeImportedMeta(settings.tagMeta, result.prefs.tagMeta, result.todos);
+    if (merged !== settings.tagMeta) {
+      settings.tagMeta = merged;
+      saveSettings(settings);
+    }
   }
   commit(result.todos, { focus: dataBtn });
   renderBackupNudge();
-  showToast(t('toast.imported', { n: result.count }), { snapshot, focus: dataBtn });
+  showToast(message, { snapshot, prefs, focus: dataBtn });
 });
 
 // Тихое напоминание о копии: строка в меню данных и точка на кнопке, без окон.
@@ -3050,7 +3178,9 @@ document.addEventListener('keydown', (e) => {
   const row = target.closest?.('.todo');
 
   if (e.key === 'Escape') {
-    if (lookOpen()) {
+    if (tagEdit) {
+      closeTagPanel(true);
+    } else if (lookOpen()) {
       setLook(false, { focus: 'button' });
     } else if (!dataPanel.hidden) {
       setDataPanel(false);
@@ -3149,6 +3279,7 @@ window.addEventListener('storage', (e) => {
     dropUndo();
     render();
     if (editingId) syncEditor(todos.find((todo) => todo.id === editingId));
+    resyncTagPanel();
   } else if (e.key === SETTINGS_KEY) {
     const next = loadSettings();
     Object.assign(settings, next, { lang: next.lang ?? settings.lang });
@@ -3156,6 +3287,7 @@ window.addEventListener('storage', (e) => {
     applyAccent();
     applyLanguage();
     render();
+    resyncTagPanel();
   } else if (e.key === REST_MOVED_KEY) {
     // вечерний перенос в другой вкладке. Ставится до записи задач: перерисуемся по ней,
     // а сейчас со старым списком render() снял бы отметку как устаревшую
@@ -3163,6 +3295,20 @@ window.addEventListener('storage', (e) => {
     if (!restMovedDay) render();
   }
 });
+
+// Окно «Цвет и значок» открыто, а метку поменяли в другой вкладке: показываем её нынешний цвет;
+// метки больше нет: окно закрывается.
+function resyncTagPanel() {
+  if (!tagEdit) return;
+  const opener = tagOpener();
+  if (!opener || !currentTagStats().some((r) => r.key === tagEdit.key)) {
+    closeTagPanel(tagPanel.contains(document.activeElement));
+    return;
+  }
+  tagEdit.opener = opener;
+  syncTagPanel();
+  placeTagPanel();
+}
 
 // Вкладку оставили открытой на ночь или вернулись к ней вечером: «Сегодня»
 // становится завтрашним днём, меняются приветствие и вечерняя кнопка.

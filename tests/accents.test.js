@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { ACCENTS, DEFAULT_ACCENT, isAccent, cleanAccent, stepChoice } from '../js/accents.js';
+import { ACCENTS, DEFAULT_ACCENT, isAccent, cleanAccent, stepChoice, gridStep } from '../js/accents.js';
 import { DICTS } from '../js/i18n.js';
 
 test('цвета приложения: семь, кобальт первый и по умолчанию', () => {
@@ -51,4 +51,21 @@ test('офлайн-копия (sw.js) включает каждый модуль
   for (const file of readdirSync(new URL('../js/', import.meta.url))) {
     if (file.endsWith('.js')) assert.ok(sw.includes(`'js/${file}'`), file);
   }
+});
+
+test('стрелки в сетке выбора: по кругу вбок, на ряд вверх и вниз, у края на месте', () => {
+  // цвета приложения: 7 в две колонки
+  assert.equal(gridStep(6, 7, 2, 'ArrowDown'), 6, 'Графит внизу: ниже некуда');
+  assert.equal(gridStep(0, 7, 2, 'ArrowUp'), 0, 'Кобальт наверху: выше некуда');
+  assert.equal(gridStep(1, 7, 2, 'ArrowDown'), 3);
+  assert.equal(gridStep(5, 7, 2, 'ArrowDown'), 5, 'под последним во втором столбце пусто');
+  assert.equal(gridStep(6, 7, 2, 'ArrowRight'), 0, 'вбок по кругу');
+  assert.equal(gridStep(0, 7, 2, 'ArrowLeft'), 6);
+  // один ряд (тема, 8 цветов метки): вверх и вниз как влево и вправо
+  assert.equal(gridStep(7, 8, 8, 'ArrowUp'), 6);
+  assert.equal(gridStep(7, 8, 8, 'ArrowDown'), 0);
+  assert.equal(gridStep(1, 3, 3, 'ArrowDown'), 2);
+  assert.equal(gridStep(4, 29, 7, 'Home'), 0);
+  assert.equal(gridStep(4, 29, 7, 'End'), 28);
+  assert.equal(gridStep(4, 29, 7, 'Enter'), null);
 });

@@ -23,3 +23,18 @@ export function stepChoice(list, current, delta) {
   const from = at === -1 ? 0 : at;
   return list[(from + delta + list.length * 2) % list.length];
 }
+
+// Стрелки в сетке выбора (цвета приложения, цвета и значки метки), как у переключателей в APG:
+// влево и вправо по кругу; вверх и вниз на ряд, у края остаёмся на месте. Сетка в один ряд:
+// вверх и вниз = влево и вправо. Home и End: первый и последний. Возвращает новый номер или null.
+export function gridStep(index, length, cols, key) {
+  const last = length - 1;
+  const oneRow = cols >= length;
+  const delta = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: oneRow ? 1 : cols, ArrowUp: oneRow ? -1 : -cols }[key];
+  if (key === 'Home') return 0;
+  if (key === 'End') return last;
+  if (delta === undefined) return null;
+  if (Math.abs(delta) === 1) return (index + delta + length) % length;
+  const to = index + delta;
+  return to < 0 || to > last ? index : to;
+}
