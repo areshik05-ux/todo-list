@@ -9,8 +9,8 @@ import {
   loadTodos, loadTodosReport, saveTodos, loadSettings, saveSettings, exportJSON, importJSON, storageAvailable, isFirstVisit,
   STORAGE_KEY, SETTINGS_KEY,
 } from './storage.js';
-import { parseQuickAdd, splitTags, MAX_TAGS, tagsIn, stripTags } from './parse.js';
-import { tagAtCaret, suggestTags, completeTag, removeTagText, pickerOptions, suggestActive, mergeTags } from './picker.js';
+import { parseQuickAdd, splitTags, MAX_TAGS, tagsIn } from './parse.js';
+import { tagAtCaret, suggestTags, completeTag, removeTagText, pickerOptions, suggestActive, mergeTags, titleMissing } from './picker.js';
 import { todayKey, toKey, fromKey, addDays, nextMonday, daysBetween } from './dates.js';
 import { createI18n, detectLang } from './i18n.js';
 import { sampleTodos, translateSamples } from './samples.js';
@@ -1737,8 +1737,12 @@ input.addEventListener('input', () => {
 chips.addEventListener('click', (e) => {
   const btn = e.target.closest('.chip-remove');
   if (!btn) return;
-  // метка убирается из текста целиком; остальное (срок, приоритет) остаётся словами названия
-  input.focus();
+  // метка убирается из текста целиком; остальное (срок, приоритет) остаётся словами названия.
+  // Мышь и клавиатура: фокус в поле (и Ctrl+Z вернёт метку). Палец: поле не трогаем, иначе
+  // откроется клавиатура телефона; фокус на соседний крестик или на «Метка»
+  const touch = !finePointer();
+  const at = $$('.chip-remove', chips).indexOf(btn);
+  if (!touch) input.focus();
   if (btn.dataset.tag) {
     dropAddTag(btn.dataset.tag);
     announce(t('picker.removed', { tag: `#${btn.dataset.tag}` }));
@@ -1748,6 +1752,10 @@ chips.addEventListener('click', (e) => {
   }
   // после крестика подсказка не всплывает: человек ничего не набирал
   hideSuggest();
+  if (touch) {
+    const rest = $$('.chip-remove', chips);
+    (rest[Math.min(at, rest.length - 1)] ?? tagPickBtn).focus({ preventScroll: true });
+  }
 });
 
 // Текст поля ввода поменяли не клавиатурой (окно «Метки», подсказка, крестик метки):
@@ -2262,14 +2270,19 @@ input.addEventListener('paste', (e) => {
 form.addEventListener('submit', (e) => {
   e.preventDefault();
   const parsed = currentParse();
-  // в поле одни метки: названия нет, как и в пустом поле
-  if (!parsed.title || !stripTags(input.value)) {
-    input.value = '';
+  // нет названия: пусто, одни метки или одни метки со сроком («завтра #дом»)
+  if (titleMissing(parsed, input.value, ignoreTokens)) {
+    // набранное остаётся (и плашки меток под полем тоже), после него пробел и курсор: название
+    // дописывается следом и не склеивается с меткой («#дом Купить хлеб» → «Купить хлеб», #дом)
+    input.value = input.value.trim() ? `${input.value.trimEnd()} ` : '';
     input.setAttribute('aria-invalid', 'true');
     hint.classList.add('is-error');
     hint.textContent = `${t('add.empty')}.`;
     announce(t('add.empty'));
     input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+    hideSuggest();
+    updateChips();
     return;
   }
   clearInputError();

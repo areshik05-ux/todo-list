@@ -80,3 +80,18 @@ test('метки поля ввода: набранные и выбранные �
   assert.deepEqual(mergeTags([], ['a', 'b', 'c', 'd', 'e', 'f']), ['a', 'b', 'c', 'd', 'e']);
   assert.deepEqual(mergeTags(undefined, undefined), []);
 });
+
+test('нет названия: пусто, одни метки, метки со сроком; одно служебное слово остаётся названием', async () => {
+  const { titleMissing } = await import('../js/picker.js');
+  const missing = (text, ignore = []) => titleMissing(parseQuickAdd(text, TODAY, { ignore }), text, ignore);
+  assert.equal(missing(''), true);
+  assert.equal(missing('   '), true);
+  assert.equal(missing('#дом'), true);
+  assert.equal(missing('#дом #работа'), true);
+  assert.equal(missing('завтра #дом'), true, 'срок и метка без названия');
+  assert.equal(missing('завтра !1 #дом'), true);
+  assert.equal(missing('завтра'), false, 'v4: одно слово срока становится названием');
+  assert.equal(missing('Купить #дом'), false);
+  assert.equal(missing('Купить хлеб завтра'), false);
+  assert.equal(missing('завтра #дом', ['#дом']), false, '«#дом» снят крестиком: это слово названия');
+});

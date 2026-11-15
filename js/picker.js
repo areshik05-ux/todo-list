@@ -3,7 +3,7 @@
 // по-прежнему текст: выбранная метка дописывается в него как «#метка», и разбор (parse.js) видит её
 // так же, как набранную руками. Убранная метка убирается из текста.
 
-import { normalizeTags, MAX_TAGS } from './parse.js';
+import { normalizeTags, MAX_TAGS, tagsIn, stripTags } from './parse.js';
 import { tagKey } from './tags.js';
 
 // для поиска: без регистра, «ё» = «е»
@@ -77,4 +77,11 @@ export function suggestActive(items, prefix) {
 // не пишутся и в название не попадают). Без повторов, не больше MAX_TAGS.
 export function mergeTags(typed, picked) {
   return normalizeTags([...(typed ?? []), ...(picked ?? [])]).slice(0, MAX_TAGS);
+}
+
+// Названия у новой задачи нет: поле пустое, в нём одни «#метки» или метки со сроком и приоритетом
+// («завтра #дом»). Одно служебное слово без меток («завтра») по-прежнему становится названием.
+export function titleMissing(parsed, text, ignore = []) {
+  if (!parsed?.title || !stripTags(text)) return true;
+  return (parsed.tokens ?? []).length === 0 && tagsIn(text, { ignore }).length > 0;
 }
