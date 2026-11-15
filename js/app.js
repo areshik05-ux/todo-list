@@ -9,7 +9,8 @@ import {
   loadTodos, loadTodosReport, saveTodos, loadSettings, saveSettings, exportJSON, importJSON, storageAvailable, isFirstVisit,
   STORAGE_KEY, SETTINGS_KEY,
 } from './storage.js';
-import { parseQuickAdd, splitTags } from './parse.js';
+import { parseQuickAdd, splitTags, MAX_TAGS } from './parse.js';
+import { tagAtCaret, suggestTags, completeTag, addTagText, removeTagText, pickerOptions } from './picker.js';
 import { todayKey, toKey, fromKey, addDays, nextMonday, daysBetween } from './dates.js';
 import { createI18n, detectLang } from './i18n.js';
 import { sampleTodos, translateSamples } from './samples.js';
@@ -17,7 +18,7 @@ import { toICS, icsFileName, ICS_TYPE } from './calendar.js';
 import { backupNudge, markBackup, readLastBackup, daysSince, requestPersist } from './backup.js';
 import { createInstall, launchAction } from './install.js';
 import { ACCENTS, cleanAccent, gridStep, DEFAULT_ACCENT } from './accents.js';
-import { syncTagMeta, setTagMeta, metaFor, tagStats, tagOfQuery, tagKey, tagsInOrder, mergeImportedMeta } from './tags.js';
+import { syncTagMeta, setTagMeta, metaFor, tagStats, tagOfQuery, tagKey, tagsInOrder, mergeImportedMeta, previewTags } from './tags.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -1374,6 +1375,7 @@ function syncEditor(todo) {
     }
   }
   editor.dataset.base = JSON.stringify(base);
+  renderEditorTags(editor);
 }
 
 function renderEditor(todo) {
@@ -1384,6 +1386,7 @@ function renderEditor(todo) {
   editor.elements.due.value = todo.due ?? '';
   editor.elements.priority.value = String(todo.priority);
   editor.elements.tags.value = todo.tags.join(' ');
+  renderEditorTags(editor, todo.id);
   editor.elements.repeat.value = todo.repeat ?? '';
   // у еженедельной задачи в списке виден её день: «По пятницам»
   if (todo.repeat === 'week' || todo.repeat === 'month') {
@@ -1394,6 +1397,57 @@ function renderEditor(todo) {
   numberSteps(editor);
   return editor;
 }
+
+// Плашка метки с крестиком: под полем ввода и в редакторе одна и та же. Цвет и значок те,
+// что метка получит после сохранения (у новой метки тоже).
+function tagChip(tag, look) {
+  const chip = document.createElement('span');
+  chip.className = `chip is-tag tc-${look.color}`;
+  const text = document.createElement('span');
+  text.textContent = tag;
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.className = 'chip-remove';
+  remove.dataset.tag = tag;
+  remove.setAttribute('aria-label', t('tag.remove', { tag: `#${tag}` }));
+  remove.title = t('tag.remove', { tag: `#${tag}` });
+  remove.append(svgIcon('x'));
+  chip.append(svgIcon(look.icon ? `t-${look.icon}` : 'hash'), text, remove);
+  return chip;
+}
+
+// Метки в редакторе: плашки вместо текстового поля, «Добавить метку» открывает окно «Метки».
+// Сохраняется скрытое поле tags (через пробел), как раньше сохранялось текстовое.
+function renderEditorTags(editor, id = editingId) {
+  const box = $('.editor-tag-list', editor);
+  if (!box) return;
+  const plates = previewTags(settings.tagMeta, todos, { id, tags: splitTags(editor.elements.tags.value) });
+  box.replaceChildren(...plates.map((look) => tagChip(look.tag, look)));
+}
+
+function setEditorTags(editor, tags) {
+  editor.elements.tags.value = tags.join(' ');
+  renderEditorTags(editor);
+}
+
+listWrap.addEventListener('click', (e) => {
+  const editor = e.target.closest('.editor');
+  if (!editor) return;
+  const add = e.target.closest('.tag-add');
+  const remove = e.target.closest('.editor-tag-list .chip-remove');
+  if (add) {
+    openPicker('editor', add);
+  } else if (remove) {
+    const buttons = $$('.editor-tag-list .chip-remove', editor);
+    const at = buttons.indexOf(remove);
+    const tag = remove.dataset.tag;
+    setEditorTags(editor, splitTags(editor.elements.tags.value).filter((x) => tagKey(x) !== tagKey(tag)));
+    announce(t('picker.removed', { tag: `#${tag}` }));
+    // фокус на соседний крестик, а последний ушёл: на «Добавить метку»
+    const rest = $$('.editor-tag-list .chip-remove', editor);
+    (rest[Math.min(at, rest.length - 1)] ?? $('.tag-add', editor)).focus();
+  }
+});
 
 function stepEditRow(step) {
   const row = stepEditTemplate.content.firstElementChild.cloneNode(true);
@@ -1590,7 +1644,11 @@ function updateChips() {
   const today = todayKey();
   const parsed = currentParse();
   const { tokens } = parsed;
-  const tagMetas = tokens.filter((token) => token.type === 'tag').map((token) => metaOf(token.value));
+  // цвет новой метки такой, какой она получит после «Добавить», и у двух новых меток он разный
+  const tagValues = tokens.filter((token) => token.type === 'tag').map((token) => token.value);
+  const preview = new Map((tagValues.length ? previewTags(settings.tagMeta, todos, { tags: tagValues }) : []).map((p) => [tagKey(p.tag), p]));
+  const lookOf = (tag) => preview.get(tagKey(tag)) ?? metaOf(tag);
+  const tagMetas = tokens.filter((token) => token.type === 'tag').map((token) => lookOf(token.value));
   const key = JSON.stringify([settings.lang, tokens, parsed.due, tagMetas]);
   if (key === lastChips) return;
   lastChips = key;
@@ -1599,11 +1657,7 @@ function updateChips() {
     chip.className = 'chip';
     let icon = { date: 'calendar', priority: 'flag', tag: 'hash', repeat: 'repeat' }[token.type];
     if (token.type === 'priority') chip.classList.add(`p${token.value}`);
-    if (token.type === 'tag') {
-      const meta = metaOf(token.value);
-      chip.classList.add('is-tag', `tc-${meta.color}`);
-      if (meta.icon) icon = `t-${meta.icon}`;
-    }
+    if (token.type === 'tag') return tagChip(token.value, lookOf(token.value));
     const text = document.createElement('span');
     text.textContent = chipText(token, today, parsed);
     const remove = document.createElement('button');
@@ -1640,6 +1694,12 @@ function clearInputError() {
   render();
 }
 
+// «Сначала напишите задачу» говорит о поле добавления. Человек ушёл к другому делу (другое поле,
+// редактор задачи, список): сообщение больше не к месту и убирается. Пока фокус в форме, оно держится.
+document.addEventListener('focusin', (e) => {
+  if (hint.classList.contains('is-error') && !form.contains(e.target)) clearInputError();
+});
+
 // Поле в фокусе с самого начала, но «/» и «?» в пустом поле остаются клавишами
 // поиска и справки, как обещают подсказки.
 input.addEventListener('keydown', (e) => {
@@ -1663,10 +1723,432 @@ input.addEventListener('input', () => {
 chips.addEventListener('click', (e) => {
   const btn = e.target.closest('.chip-remove');
   if (!btn) return;
-  ignoreTokens.push(btn.dataset.token);
-  updateChips();
+  // метка убирается из текста целиком; остальное (срок, приоритет) остаётся словами названия
+  if (btn.dataset.tag) {
+    setAddText(removeTagText(input.value, btn.dataset.tag));
+    announce(t('picker.removed', { tag: `#${btn.dataset.tag}` }));
+  } else {
+    ignoreTokens.push(btn.dataset.token);
+    updateChips();
+  }
   input.focus();
 });
+
+// Текст поля ввода поменяли не клавиатурой (окно «Метки», подсказка, крестик метки):
+// всё, что зависит от набранного, обновляется так же, как при вводе.
+function setAddText(text, caret = text.length, added = null) {
+  input.value = text;
+  // метку, которую выбрали снова, распознаём, даже если раньше её крестиком сделали словом
+  if (added) ignoreTokens = ignoreTokens.filter((token) => tagKey(token.replace(/^#+/, '')) !== tagKey(added));
+  if (document.activeElement === input) input.setSelectionRange(caret, caret);
+  input.dispatchEvent(new Event('input'));
+}
+
+/* Подсказка после «#» в поле ввода: свои метки, сначала частые */
+
+const suggest = $('#tag-suggest');
+let sugg = null; // { at, items, active }
+
+function hideSuggest() {
+  if (!sugg && suggest.hidden) return;
+  sugg = null;
+  suggest.hidden = true;
+  suggest.replaceChildren();
+  input.setAttribute('aria-expanded', 'false');
+  input.removeAttribute('aria-activedescendant');
+}
+
+function updateSuggest() {
+  if (document.activeElement !== input || input.selectionStart !== input.selectionEnd) return hideSuggest();
+  const at = tagAtCaret(input.value, input.selectionStart);
+  if (!at) return hideSuggest();
+  const chosen = currentParse().tags.filter((tag) => tagKey(tag) !== tagKey(at.prefix));
+  const items = suggestTags(currentTagStats(), at.prefix, chosen);
+  if (!items.length) return hideSuggest();
+  const keep = sugg && sugg.active >= 0 ? items.findIndex((row) => row.key === sugg.items[sugg.active]?.key) : -1;
+  sugg = { at, items, active: keep };
+  suggest.replaceChildren(...items.map((row, i) => {
+    const li = document.createElement('li');
+    li.id = `tag-sug-${i}`;
+    li.className = 'suggest-opt';
+    li.setAttribute('role', 'option');
+    li.setAttribute('aria-selected', String(i === sugg.active));
+    li.dataset.index = String(i);
+    li.append(tagPlate(row.tag, metaOf(row.tag)));
+    return li;
+  }));
+  suggest.hidden = false;
+  input.setAttribute('aria-expanded', 'true');
+  markSuggest();
+}
+
+function markSuggest() {
+  for (const li of suggest.children) li.setAttribute('aria-selected', String(Number(li.dataset.index) === sugg.active));
+  if (sugg.active >= 0) {
+    input.setAttribute('aria-activedescendant', `tag-sug-${sugg.active}`);
+    suggest.children[sugg.active].scrollIntoView({ block: 'nearest' });
+  } else input.removeAttribute('aria-activedescendant');
+}
+
+function pickSuggest(index) {
+  const row = sugg?.items[index];
+  if (!row) return;
+  const done = completeTag(input.value, sugg.at, row.tag);
+  hideSuggest();
+  setAddText(done.text, done.caret, row.tag);
+}
+
+// Плашка метки без кнопок (подсказка и окно «Метки»)
+function tagPlate(tag, look) {
+  const plate = document.createElement('span');
+  plate.className = `meta-tag tc-${look.color}`;
+  const label = document.createElement('span');
+  label.textContent = look.icon ? tag : `#${tag}`;
+  if (look.icon) plate.append(svgIcon(`t-${look.icon}`));
+  plate.append(label);
+  return plate;
+}
+
+input.addEventListener('keydown', (e) => {
+  if (!sugg || e.isComposing) return;
+  const n = sugg.items.length;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    const step = e.key === 'ArrowDown' ? 1 : -1;
+    sugg.active = sugg.active < 0 ? (step > 0 ? 0 : n - 1) : (sugg.active + step + n) % n;
+    markSuggest();
+  } else if (e.key === 'Enter' && sugg.active >= 0) {
+    e.preventDefault();
+    pickSuggest(sugg.active);
+  } else if (e.key === 'Tab' && !e.shiftKey) {
+    e.preventDefault();
+    pickSuggest(Math.max(0, sugg.active));
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    e.stopPropagation();
+    hideSuggest();
+  }
+});
+
+input.addEventListener('input', updateSuggest);
+input.addEventListener('click', updateSuggest);
+input.addEventListener('keyup', (e) => {
+  if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) updateSuggest();
+});
+input.addEventListener('blur', hideSuggest);
+// клик по подсказке: фокус остаётся в поле
+suggest.addEventListener('mousedown', (e) => e.preventDefault());
+suggest.addEventListener('click', (e) => {
+  const li = e.target.closest('.suggest-opt');
+  if (li) pickSuggest(Number(li.dataset.index));
+});
+
+/* Окно «Метки»: выбрать метки задачи из своих или создать новую (поле ввода и редактор) */
+
+const picker = $('#tag-picker');
+const pickerQ = $('#tag-picker-q');
+const pickerList = $('#tag-picker-list');
+const pickerNote = $('#picker-note');
+const pickerNew = $('#picker-new');
+const tagPickBtn = $('#tag-pick-btn');
+let pick = null; // { ctx: 'add' | 'editor', opener, items, active, created }
+
+// цвета и значки для новой метки: копии сеток из окна «Цвет и значок»
+for (const [sel, labelId, after] of [['#tag-colors', 'picker-color-label', '#picker-color-label'], ['#tag-icons', 'picker-icon-label', '#picker-icon-label']]) {
+  const grid = $(sel).cloneNode(true);
+  grid.removeAttribute('id');
+  grid.setAttribute('aria-labelledby', labelId);
+  $(after, pickerNew).after(grid);
+}
+
+function pickEditor() {
+  return pick?.ctx === 'editor' ? $('.editor', listWrap) : null;
+}
+
+function chosenTags() {
+  if (pick?.ctx === 'editor') {
+    const editor = pickEditor();
+    return editor ? splitTags(editor.elements.tags.value) : [];
+  }
+  return currentParse().tags;
+}
+
+function setChosen(tag, on) {
+  const editor = pickEditor();
+  if (pick.ctx === 'editor') {
+    if (!editor) return;
+    const list = splitTags(editor.elements.tags.value).filter((x) => tagKey(x) !== tagKey(tag));
+    setEditorTags(editor, on ? [...list, tag] : list);
+  } else {
+    const text = on ? addTagText(removeTagText(input.value, tag), tag) : removeTagText(input.value, tag);
+    setAddText(text, text.length, on ? tag : null);
+  }
+}
+
+// как выглядят метки в окне: выбранные новые так, как получат после сохранения
+function pickerLooks(chosen) {
+  const id = pick.ctx === 'editor' ? editingId : undefined;
+  return new Map(previewTags(settings.tagMeta, todos, { id, tags: chosen }).map((p) => [tagKey(p.tag), p]));
+}
+
+function renderPicker() {
+  const chosen = chosenTags();
+  const keys = new Set(chosen.map(tagKey));
+  const full = chosen.length >= MAX_TAGS;
+  const { list, create } = pickerOptions(currentTagStats(), pickerQ.value, chosen);
+  const looks = pickerLooks(chosen);
+  const items = list.map((option) => ({ ...option, on: keys.has(option.key) }));
+  if (create && !full) items.push({ tag: create, key: tagKey(create), create: true });
+  pick.items = items;
+  if (pick.active >= items.length) pick.active = items.length - 1;
+  if (pick.active < 0 && pickerQ.value.trim() && items.length) pick.active = 0;
+  pickerList.replaceChildren(...items.map((option, i) => {
+    const li = document.createElement('li');
+    li.id = `tag-opt-${i}`;
+    li.className = 'picker-opt';
+    li.setAttribute('role', 'option');
+    li.dataset.index = String(i);
+    if (option.create) {
+      li.classList.add('is-create');
+      li.setAttribute('aria-selected', 'false');
+      const text = document.createElement('span');
+      text.textContent = t('picker.create', { tag: `#${option.tag}` });
+      li.append(svgIcon('plus'), text);
+    } else {
+      li.setAttribute('aria-selected', String(option.on));
+      if (full && !option.on) li.setAttribute('aria-disabled', 'true');
+      li.append(tagPlate(option.tag, looks.get(option.key) ?? metaOf(option.tag)), svgIcon('check', 'icon picker-check'));
+    }
+    return li;
+  }));
+  const note = full ? t('picker.max', { n: MAX_TAGS }) : items.length ? '' : pickerQ.value.trim() ? t('picker.nothing') : t('picker.empty');
+  pickerNote.textContent = note;
+  pickerNote.hidden = !note;
+  markPicker();
+}
+
+function markPicker() {
+  for (const li of pickerList.children) li.classList.toggle('is-active', Number(li.dataset.index) === pick.active);
+  if (pick.active >= 0 && pickerList.children[pick.active]) {
+    pickerQ.setAttribute('aria-activedescendant', `tag-opt-${pick.active}`);
+    pickerList.children[pick.active].scrollIntoView({ block: 'nearest' });
+  } else pickerQ.removeAttribute('aria-activedescendant');
+}
+
+function choosePicked(index) {
+  const option = pick?.items[index];
+  if (!option) return;
+  pick.active = index;
+  if (option.create) {
+    createTag(option.tag);
+    return;
+  }
+  if (!option.on && chosenTags().length >= MAX_TAGS) {
+    announce(t('picker.max', { n: MAX_TAGS }));
+    return;
+  }
+  setChosen(option.tag, !option.on);
+  announce(t(option.on ? 'picker.removed' : 'picker.added', { tag: `#${option.tag}` }));
+  renderPicker();
+}
+
+// Новая метка из окна: сразу со своим цветом (тем, что она получила бы и так) и значком по слову,
+// а ниже сетки цвета и значка, чтобы выбрать свои. Запись в словаре появляется сразу.
+function createTag(name) {
+  const [auto] = previewTags(settings.tagMeta, todos, { tags: [name] });
+  settings.tagMeta = setTagMeta(settings.tagMeta, name, { color: auto.color, icon: auto.icon });
+  saveSettings(settings);
+  pick.created = name;
+  pickerQ.value = '';
+  pick.active = -1;
+  setChosen(name, true);
+  renderPicker();
+  syncPickerNew();
+  pickerNew.hidden = false;
+  placePicker();
+  announce(t('picker.created', { tag: `#${name}` }));
+  $('[data-color][aria-checked="true"]', pickerNew)?.focus();
+}
+
+function syncPickerNew() {
+  if (!pick?.created) return;
+  const meta = metaOf(pick.created);
+  $('#picker-new-title').textContent = t('picker.newTitle', { tag: `#${pick.created}` });
+  pickerNew.className = `picker-new tc-${meta.color}`;
+  for (const btn of $$('[data-color]', pickerNew)) {
+    const on = btn.dataset.color === meta.color;
+    btn.setAttribute('aria-checked', String(on));
+    btn.tabIndex = on ? 0 : -1;
+  }
+  for (const btn of $$('[data-icon]', pickerNew)) {
+    const on = btn.dataset.icon === (meta.icon ?? '');
+    btn.setAttribute('aria-checked', String(on));
+    btn.tabIndex = on ? 0 : -1;
+  }
+}
+
+function changeCreated(patch, focusSel) {
+  if (!pick?.created) return;
+  const next = setTagMeta(settings.tagMeta, pick.created, patch);
+  if (next !== settings.tagMeta) {
+    settings.tagMeta = next;
+    saveSettings(settings);
+    if (pick.ctx === 'editor') renderEditorTags(pickEditor());
+    else updateChips();
+    renderPicker();
+  }
+  syncPickerNew();
+  $(focusSel, pickerNew)?.focus();
+}
+
+function placePicker() {
+  if (!pick) return;
+  const opener = pick.opener;
+  if (!opener?.isConnected) return;
+  const r = opener.getBoundingClientRect();
+  const phone = innerWidth < PHONE_POPOVER;
+  const w = phone ? innerWidth - 24 : Math.min(320, innerWidth - 24);
+  picker.style.width = `${w}px`;
+  picker.style.maxHeight = 'none';
+  const full = picker.offsetHeight;
+  const left = phone ? 12 : Math.max(12, Math.min(r.left, innerWidth - w - 12));
+  let top;
+  if (r.bottom + 6 + full <= innerHeight - 12) top = r.bottom + 6;
+  else if (r.top - 6 - full >= 12) top = r.top - 6 - full;
+  else top = Math.max(12, Math.min(r.bottom + 6, innerHeight - 12 - Math.min(full, innerHeight - 24)));
+  picker.style.maxHeight = `${innerHeight - top - 12}px`;
+  picker.style.left = `${left}px`;
+  picker.style.top = `${top}px`;
+}
+
+function openPicker(ctx, opener) {
+  if (pick && pick.opener === opener) {
+    closePicker(true);
+    return;
+  }
+  closePicker(false);
+  closeTagPanel(false);
+  closeMenu(false);
+  setDataPanel(false);
+  setLook(false);
+  hideSuggest();
+  pick = { ctx, opener, items: [], active: -1, created: null };
+  opener.setAttribute('aria-expanded', 'true');
+  pickerQ.value = '';
+  pickerNew.hidden = true;
+  renderPicker();
+  picker.hidden = false;
+  placePicker();
+  // на телефоне клавиатуру сами не открываем: метки выбираются касанием, поле поиска рядом
+  (finePointer() ? pickerQ : picker).focus();
+}
+
+function closePicker(returnFocus) {
+  if (!pick) return;
+  const { opener } = pick;
+  pick = null;
+  picker.hidden = true;
+  pickerNew.hidden = true;
+  opener?.setAttribute('aria-expanded', 'false');
+  if (returnFocus && opener?.isConnected) opener.focus();
+}
+
+tagPickBtn.addEventListener('click', () => openPicker('add', tagPickBtn));
+
+pickerQ.addEventListener('input', () => {
+  pick.active = -1;
+  renderPicker();
+});
+
+pickerQ.addEventListener('keydown', (e) => {
+  if (!pick || e.isComposing) return;
+  const n = pick.items.length;
+  if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && n) {
+    e.preventDefault();
+    const step = e.key === 'ArrowDown' ? 1 : -1;
+    pick.active = pick.active < 0 ? (step > 0 ? 0 : n - 1) : Math.max(0, Math.min(n - 1, pick.active + step));
+    markPicker();
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (pick.active >= 0) choosePicked(pick.active);
+    else if (!pickerQ.value.trim()) closePicker(true);
+  }
+});
+
+pickerList.addEventListener('mousedown', (e) => e.preventDefault());
+pickerList.addEventListener('click', (e) => {
+  const li = e.target.closest('.picker-opt');
+  if (li) choosePicked(Number(li.dataset.index));
+});
+
+pickerNew.addEventListener('click', (e) => {
+  const color = e.target.closest('[data-color]');
+  const icon = e.target.closest('[data-icon]');
+  if (color) changeCreated({ color: color.dataset.color }, `[data-color="${color.dataset.color}"]`);
+  else if (icon) changeCreated({ icon: icon.dataset.icon || null }, `[data-icon="${icon.dataset.icon}"]`);
+});
+
+$('#tag-picker-done').addEventListener('click', () => closePicker(true));
+
+picker.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    e.stopPropagation();
+    closePicker(true);
+    return;
+  }
+  // как у «Цвет и значок»: Tab после «Готово» ведёт дальше за кнопкой, Shift+Tab с поиска к кнопке
+  if (e.key === 'Tab' && !e.altKey && !e.ctrlKey && !e.metaKey) {
+    const stops = tabStops(picker);
+    const edge = e.shiftKey ? stops[0] : stops[stops.length - 1];
+    if (e.target !== edge && e.target !== picker) return;
+    if (e.target === picker && !e.shiftKey) return;
+    e.preventDefault();
+    if (e.shiftKey) {
+      closePicker(true);
+      return;
+    }
+    const { opener } = pick;
+    closePicker(false);
+    (nextStopAfter(opener) ?? opener).focus();
+    return;
+  }
+  const btn = e.target.closest('[data-color], [data-icon]');
+  if (!btn || !pickerNew.contains(btn)) return;
+  const group = btn.hasAttribute('data-color') ? $$('[data-color]', pickerNew) : $$('[data-icon]', pickerNew);
+  const to = gridStep(group.indexOf(btn), group.length, columnsOf(group), e.key);
+  if (to === null) return;
+  e.preventDefault();
+  group[to].click();
+});
+
+document.addEventListener('click', (e) => {
+  if (!pick || e.target.closest('#tag-picker') || e.target.closest('#tag-pick-btn, .tag-add')) return;
+  closePicker(false);
+});
+
+picker.addEventListener('focusout', (e) => {
+  if (!pick) return;
+  if (e.relatedTarget) {
+    if (picker.contains(e.relatedTarget) || e.relatedTarget === pick.opener) return;
+    closePicker(false);
+    return;
+  }
+  setTimeout(() => {
+    if (!pick || !document.hasFocus()) return;
+    const now = document.activeElement;
+    if (picker.contains(now) || now === pick.opener) return;
+    closePicker(false);
+  }, 0);
+});
+
+window.addEventListener('resize', placePicker);
+document.addEventListener('scroll', (e) => {
+  if (!pick || picker.contains(e.target)) return;
+  const r = pick.opener.getBoundingClientRect();
+  if (!pick.opener.isConnected || r.bottom < 0 || r.top > innerHeight) closePicker(false);
+  else placePicker();
+}, { passive: true, capture: true });
 
 // Вставили больше, чем помещается в поле: браузер молча отрежет конец, а там часто срок и метки.
 // Перевод строки в однострочном поле становится одним знаком, «\r\n» из Windows тоже.
@@ -2029,6 +2511,7 @@ let keepAnchor = false; // редактор открыт из «Выбрать �
 
 function startEditing(li, selector = 'input[name="title"]', { oneOff = false } = {}) {
   if (editingId === li.dataset.id) return;
+  clearInputError();
   editingId = li.dataset.id;
   keepAnchor = oneOff;
   render({ id: editingId, selector });
@@ -2214,7 +2697,8 @@ listWrap.addEventListener('keydown', (e) => {
 // Клик или Tab мимо редактора сохраняет правку, как в v1 при потере фокуса.
 // Клик по «Вернуть» в сообщении правку не сохраняет: редактор остаётся открытым (см. applyUndo).
 document.addEventListener('click', (e) => {
-  if (editingId && !e.target.closest?.('.editor, .toast')) flushEditor();
+  // окно «Метки» работает на редактор: клики в нём правку не сохраняют
+  if (editingId && !e.target.closest?.('.editor, .toast, #tag-picker')) flushEditor();
 }, true);
 
 // Пока кнопка мыши или палец нажаты, фокус уходит из редактора, но клика ещё
@@ -2233,7 +2717,7 @@ listWrap.addEventListener('focusout', (e) => {
   // Tab в сообщение с «Вернуть» или в меню строки правку тоже не трогает:
   // иначе сообщение закрылось бы раньше, чем на него нажали.
   if (!editor || !e.relatedTarget || editor.contains(e.relatedTarget) || pointerDown) return;
-  if (e.relatedTarget.closest('.toast, #row-menu')) return;
+  if (e.relatedTarget.closest('.toast, #row-menu, #tag-picker')) return;
   flushEditor();
 });
 
@@ -3178,7 +3662,9 @@ document.addEventListener('keydown', (e) => {
   const row = target.closest?.('.todo');
 
   if (e.key === 'Escape') {
-    if (tagEdit) {
+    if (pick) {
+      closePicker(true);
+    } else if (tagEdit) {
       closeTagPanel(true);
     } else if (lookOpen()) {
       setLook(false, { focus: 'button' });

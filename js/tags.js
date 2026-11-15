@@ -174,6 +174,21 @@ export function mergeImportedMeta(own, imported, todos) {
   return next ?? own;
 }
 
+// Как будут выглядеть метки задачи после сохранения: тот же расчёт, что и при сохранении
+// (syncTagMeta), поэтому превью в редакторе и в поле ввода = итог. Несколько новых меток
+// получают разные цвета по порядку, как и получат на самом деле.
+// task: { id, tags, createdAt }; задачи с таким id ещё нет (новая): она встаёт последней.
+export function previewTags(meta, todos, task) {
+  const tags = normalizeTags(task.tags ?? []);
+  const list = todos ?? [];
+  const known = task.id != null && list.some((todo) => todo.id === task.id);
+  const future = known
+    ? list.map((todo) => (todo.id === task.id ? { ...todo, tags } : todo))
+    : [...list, { id: task.id ?? null, tags, createdAt: task.createdAt ?? Number.MAX_SAFE_INTEGER }];
+  const after = syncTagMeta(meta ?? {}, future, Infinity);
+  return tags.map((tag) => ({ tag, ...own(after, tagKey(tag)) }));
+}
+
 // Поменять цвет или значок одной метки. Неизвестное значение не меняет ничего.
 export function setTagMeta(meta, tag, patch) {
   const key = tagKey(tag);

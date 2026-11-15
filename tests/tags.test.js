@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   TAG_COLORS, TAG_ICONS, MAX_TAG_META, MAX_TAG_META_READ, ICON_WORD_COUNT, iconFor, cleanTagMeta, tagsInOrder, nextColor, metaFor,
-  syncTagMeta, setTagMeta, tagStats, tagOfQuery, tagKey, mergeImportedMeta,
+  syncTagMeta, setTagMeta, tagStats, tagOfQuery, tagKey, mergeImportedMeta, previewTags,
 } from '../js/tags.js';
 import { DICTS } from '../js/i18n.js';
 
@@ -210,4 +210,28 @@ test('цвет считается по меткам в работе', () => {
   assert.equal(nextColor({}), 'teal');
   assert.equal(nextColor({ a: { color: 'teal' } }, ['a']), 'violet');
   assert.equal(nextColor({ a: { color: 'teal' } }, []), 'teal', 'неиспользуемые не занимают цвет');
+});
+
+test('превью меток в редакторе и поле ввода = то, что метки получат после сохранения', () => {
+  const todos = [todo(['дом'], { id: 'a', createdAt: 1 }), todo(['работа'], { id: 'b', createdAt: 2 })];
+  const meta = syncTagMeta({}, todos);
+  // редактор задачи «a»: дописали две новые метки, у них разные цвета, как после сохранения
+  const typed = ['дом', 'оил', 'Спорт'];
+  const preview = previewTags(meta, todos, { id: 'a', tags: typed });
+  const saved = syncTagMeta(meta, todos.map((x) => (x.id === 'a' ? { ...x, tags: typed } : x)));
+  assert.deepEqual(preview, [
+    { tag: 'дом', ...saved.дом },
+    { tag: 'оил', ...saved.оил },
+    { tag: 'Спорт', ...saved.спорт },
+  ]);
+  assert.notEqual(preview[1].color, preview[2].color, 'две новые метки не одного цвета');
+  assert.equal(preview[2].icon, 'dumbbell');
+  assert.deepEqual(preview[0], { tag: 'дом', ...meta.дом }, 'своя метка со своим цветом');
+  assert.equal(meta.оил, undefined, 'словарь не меняется');
+  // новая задача из поля ввода встаёт последней
+  const quick = previewTags(meta, todos, { tags: ['оил', 'спорт'] });
+  const added = syncTagMeta(meta, [...todos, todo(['оил', 'спорт'], { id: 'c', createdAt: 3 })]);
+  assert.deepEqual(quick.map((p) => p.color), [added.оил.color, added.спорт.color]);
+  assert.deepEqual(previewTags(meta, todos, { id: 'a', tags: [] }), []);
+  assert.deepEqual(previewTags(meta, todos, { id: 'a', tags: ['#дом', 'Дом', ''] }).map((p) => p.tag), ['дом']);
 });

@@ -1138,6 +1138,82 @@ h1 {
   margin-top: 8px;
 }
 
+/* «# Метка» под полем ввода и распознанные слова рядом с ней, одной строкой с переносом */
+.compose-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.compose-tags .chips:not(:empty) {
+  margin-top: 0;
+}
+
+.tag-pick-btn,
+.tag-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--hit);
+  padding: 0 10px 0 8px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-small);
+  font-weight: 500;
+  transition: background-color var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+}
+
+.tag-pick-btn {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text-2);
+}
+
+.tag-add {
+  color: var(--blue-ink);
+}
+
+.tag-pick-btn .icon,
+.tag-add .icon {
+  width: 16px;
+  height: 16px;
+}
+
+@media (hover: hover) {
+  .tag-pick-btn:hover,
+  .tag-add:hover {
+    background: var(--hover);
+    color: var(--text);
+  }
+}
+
+.tag-pick-btn[aria-expanded="true"],
+.tag-add[aria-expanded="true"] {
+  background: var(--hover);
+  color: var(--text);
+}
+
+/* подсказка после «#»: под полем ввода, свои метки плашками */
+.tag-suggest {
+  position: absolute;
+  z-index: 25;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  display: grid;
+  gap: 2px;
+  max-height: 240px;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--raised);
+  box-shadow: var(--shadow-overlay);
+  list-style: none;
+}
+
 /* распознанные слова: голубым, приоритет 1 розовым; радиус 6, не таблетки */
 .chip {
   display: inline-flex;
@@ -1185,7 +1261,11 @@ h1 {
 
 @media (pointer: coarse) {
   .chip { height: 32px; }
-  .chip-remove { width: 32px; height: 32px; }
+  /* крестик 44 px, плашка остаётся 32: ряды плашек расходятся, чтобы крестики не заходили друг на друга */
+  .chip-remove { width: 44px; height: 44px; margin: -6px -2px -6px -6px; }
+  .chips,
+  .compose-tags,
+  .editor-tags { row-gap: 14px; }
 }
 
 @keyframes chip-in {
@@ -1941,6 +2021,144 @@ h1 .title-icon {
   .tag-panel { padding: 8px; }
 }
 
+/* Окно «Метки» (оформление окна общее с «Цвет и значок»): поиск, список своих меток, новая метка */
+.picker-search {
+  position: relative;
+}
+
+.picker-search > .icon {
+  position: absolute;
+  top: 50%;
+  left: 10px;
+  width: 16px;
+  height: 16px;
+  color: var(--text-3);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.picker-search input {
+  width: 100%;
+  height: var(--hit);
+  min-height: 36px;
+  padding: 0 10px 0 32px;
+  border: 1px solid var(--field);
+  border-radius: var(--r-sm);
+  background: var(--sunk);
+  color: var(--text);
+  font-size: var(--fs-body);
+}
+
+.picker-list {
+  display: grid;
+  gap: 2px;
+  max-height: 264px;
+  margin: 8px 0 0;
+  padding: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+}
+
+.picker-opt,
+.suggest-opt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  min-height: var(--hit);
+  padding: 2px 8px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+
+.picker-opt .meta-tag,
+.suggest-opt .meta-tag {
+  margin: 0;
+}
+
+@media (hover: hover) {
+  .picker-opt:hover,
+  .suggest-opt:hover {
+    background: var(--hover);
+  }
+}
+
+/* строка под стрелками: кольцо, как у фокуса (фокус остаётся в поле поиска) */
+.picker-opt.is-active,
+.suggest-opt[aria-selected="true"] {
+  background: var(--hover);
+  box-shadow: inset 0 0 0 2px var(--focus);
+}
+
+.picker-check {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  color: var(--blue-ink);
+  visibility: hidden;
+}
+
+.picker-opt[aria-selected="true"] .picker-check {
+  visibility: visible;
+}
+
+.picker-opt[aria-disabled="true"] {
+  cursor: default;
+}
+
+.picker-opt[aria-disabled="true"] .meta-tag {
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+  color: var(--text-3);
+}
+
+.picker-opt.is-create {
+  justify-content: flex-start;
+  color: var(--blue-ink);
+  font-size: var(--fs-small);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.picker-opt.is-create .icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+.picker-note {
+  margin: 8px 4px 0;
+  color: var(--text-2);
+  font-size: var(--fs-meta);
+  line-height: 16px;
+  text-wrap: pretty;
+}
+
+.picker-new {
+  margin-top: 12px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+}
+
+.picker-new-title {
+  overflow-wrap: anywhere;
+  color: var(--text);
+}
+
+/* Метки в редакторе: плашки с крестиком и «Добавить метку» одной строкой с переносом */
+.editor-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.editor-tag-list {
+  display: contents;
+}
+
 .todo-actions {
   grid-column: 4;
   display: flex;
@@ -2019,6 +2237,7 @@ h1 .title-icon {
 .field-tags {
   grid-column: 1 / -1;
 }
+
 
 .field-label {
   color: var(--text-2);
@@ -2405,6 +2624,11 @@ h1 .title-icon {
 .field .step-title,
 .field .step-new {
   height: 36px;
+}
+
+@media (pointer: coarse) {
+  .field .step-title,
+  .field .step-new { height: 44px; }
 }
 
 .step-add {

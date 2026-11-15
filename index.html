@@ -229,12 +229,21 @@
         <svg class="icon composer-icon" aria-hidden="true"><use href="#i-plus"/></svg>
         <label class="visually-hidden" for="new-todo" data-i18n="add.label">Новая задача</label>
         <input id="new-todo" type="text" maxlength="2000" enterkeyhint="done"
+               role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="tag-suggest"
                aria-describedby="add-hint" data-i18n-attr="placeholder:add.placeholder"
                placeholder="Добавить задачу">
         <kbd class="key-hint" aria-hidden="true">N</kbd>
         <button type="submit" class="btn-primary" data-i18n="add.submit">Добавить</button>
+        <!-- после «#» в поле: свои метки, стрелки и Enter или Tab выбирают, Esc закрывает -->
+        <ul class="tag-suggest" id="tag-suggest" role="listbox" data-i18n-attr="aria-label:tags.title" aria-label="Метки" hidden></ul>
       </form>
-      <div class="chips" id="chips" aria-live="polite"></div>
+      <div class="compose-tags">
+        <button type="button" class="tag-pick-btn" id="tag-pick-btn" aria-haspopup="dialog" aria-expanded="false" aria-controls="tag-picker">
+          <svg class="icon" aria-hidden="true"><use href="#i-hash"/></svg>
+          <span data-i18n="picker.button">Метка</span>
+        </button>
+        <div class="chips" id="chips" aria-live="polite"></div>
+      </div>
       <p class="hint" id="add-hint">Понимаю «завтра», «в&nbsp;пятницу», «каждый понедельник», !1 и&nbsp;#метки. Задача без срока получит сегодняшнюю дату.</p>
 
       <p class="warning" id="storage-warning" role="alert" data-i18n="storage.warning" hidden></p>
@@ -419,6 +428,28 @@
     </div>
   </div>
 
+  <!-- Метки задачи: свои метки плашками (выбор и снятие), поиск и новая метка со своим цветом и значком.
+       Не модальное, как «Цвет и значок»: выбор применяется сразу, Esc и «Готово» закрывают -->
+  <div class="tag-panel tag-picker" id="tag-picker" role="dialog" aria-labelledby="tag-picker-title" tabindex="-1" hidden>
+    <p class="look-title" id="tag-picker-title" data-i18n="tags.title">Метки</p>
+    <div class="picker-search">
+      <svg class="icon" aria-hidden="true"><use href="#i-search"/></svg>
+      <input id="tag-picker-q" type="text" maxlength="40" autocomplete="off" spellcheck="false" enterkeyhint="done"
+             role="combobox" aria-autocomplete="list" aria-expanded="true" aria-controls="tag-picker-list"
+             data-i18n-attr="placeholder:picker.placeholder;aria-label:picker.placeholder" placeholder="Найти или создать">
+    </div>
+    <ul class="picker-list" id="tag-picker-list" role="listbox" aria-multiselectable="true" data-i18n-attr="aria-label:tags.title" aria-label="Метки"></ul>
+    <p class="picker-note" id="picker-note" hidden></p>
+    <div class="picker-new" id="picker-new" hidden>
+      <p class="look-label picker-new-title" id="picker-new-title"></p>
+      <p class="look-label" id="picker-color-label" data-i18n="tag.color">Цвет</p>
+      <p class="look-label" id="picker-icon-label" data-i18n="tag.icon">Значок</p>
+    </div>
+    <div class="tag-panel-foot">
+      <button type="button" class="btn-secondary" id="tag-picker-done" data-i18n="tag.done">Готово</button>
+    </div>
+  </div>
+
   <dialog class="dialog" id="help" aria-labelledby="help-title">
     <div class="dialog-head">
       <h2 id="help-title" data-i18n="help.title">Быстрый ввод и клавиши</h2>
@@ -538,10 +569,18 @@
             <svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg>
           </span>
         </label>
-        <label class="field field-tags">
-          <span class="field-label"><span data-i18n="editor.tags">Метки</span> <span class="field-note" data-i18n="editor.tagsHint"></span></span>
-          <input name="tags" type="text" maxlength="200">
-        </label>
+        <!-- метки плашками: крестик убирает, «Добавить метку» открывает окно «Метки» -->
+        <div class="field field-tags" role="group" data-i18n-attr="aria-label:editor.tags">
+          <span class="field-label" aria-hidden="true" data-i18n="editor.tags">Метки</span>
+          <input type="hidden" name="tags">
+          <div class="editor-tags">
+            <span class="editor-tag-list"></span>
+            <button type="button" class="tag-add" aria-haspopup="dialog" aria-expanded="false" aria-controls="tag-picker">
+              <svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>
+              <span data-i18n="editor.addTag">Добавить метку</span>
+            </button>
+          </div>
+        </div>
       </div>
       <fieldset class="field steps-edit">
         <legend class="field-label"><span data-i18n="editor.steps">Шаги</span> <span class="field-note" data-i18n="editor.stepsHint"></span></legend>
