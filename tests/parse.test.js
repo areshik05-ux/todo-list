@@ -363,3 +363,15 @@ test('диапазон словами остаётся в названии це�
   assert.equal(on('Отжиматься от 10 до 20 раз').due, null);
   assert.equal(on('Договор от 1 декабря подписать').due, null);
 });
+
+test('метки из текста без названия: для плашек и окна «Метки»', async () => {
+  const { tagsIn, stripTags } = await import('../js/parse.js');
+  assert.deepEqual(tagsIn('#a'), ['a']);
+  assert.deepEqual(tagsIn('#дом #работа'), ['дом', 'работа']);
+  assert.deepEqual(tagsIn('#дом #Дом #ДОМ'), ['дом'], 'без повторов');
+  assert.deepEqual(tagsIn('#a1 #b2 #c3 #d4 #e5 #f6'), ['a1', 'b2', 'c3', 'd4', 'e5'], 'не больше пяти');
+  assert.deepEqual(tagsIn('Купить #дом и #1 a#b'), ['дом']);
+  assert.deepEqual(tagsIn('#дом #работа', { ignore: ['#ДОМ'] }), ['работа'], 'снятое крестиком не метка');
+  assert.equal(stripTags('#дом #работа'), '');
+  assert.equal(stripTags(' Купить #дом хлеб '), 'Купить хлеб');
+});

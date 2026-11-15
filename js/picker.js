@@ -3,7 +3,7 @@
 // по-прежнему текст: выбранная метка дописывается в него как «#метка», и разбор (parse.js) видит её
 // так же, как набранную руками. Убранная метка убирается из текста.
 
-import { normalizeTags } from './parse.js';
+import { normalizeTags, MAX_TAGS } from './parse.js';
 import { tagKey } from './tags.js';
 
 // для поиска: без регистра, «ё» = «е»
@@ -64,4 +64,17 @@ export function pickerOptions(rows, query, chosen = []) {
   // в поле ввода «#123» не метка (нужна хоть одна буква): такую и создавать не предлагаем
   const create = name && /\p{L}/u.test(name) && !all.some((option) => option.key === tagKey(name)) ? name : null;
   return { list, create };
+}
+
+// Какая подсказка выделена сразу. Первая, чтобы Enter дописал метку, которую видно выделенной
+// («#по» + Enter → «#покупки»). Набрано уже целое имя первой: ничего, Enter добавляет задачу.
+export function suggestActive(items, prefix) {
+  if (!items?.length) return -1;
+  return fold(items[0].tag) === fold(prefix ?? '') ? -1 : 0;
+}
+
+// Метки задачи из поля ввода: набранные «#словом» и выбранные в окне «Метки» (они в текст
+// не пишутся и в название не попадают). Без повторов, не больше MAX_TAGS.
+export function mergeTags(typed, picked) {
+  return normalizeTags([...(typed ?? []), ...(picked ?? [])]).slice(0, MAX_TAGS);
 }

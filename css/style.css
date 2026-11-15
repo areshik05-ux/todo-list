@@ -211,8 +211,11 @@ kbd {
     grid-template-columns: 248px minmax(0, 1fr);
   }
 
+  /* sticky делает панель отдельным слоем: без z-index её окна («Оформление») рисовались бы
+     под строками задач, у которых position: relative. Ниже меню строки (25) и сообщения (30) */
   .side {
     position: sticky;
+    z-index: 21;
     top: 0;
     height: 100dvh;
     grid-template-columns: 1fr;
@@ -1192,6 +1195,11 @@ h1 {
 .tag-add[aria-expanded="true"] {
   background: var(--hover);
   color: var(--text);
+}
+
+.tag-suggest.is-above {
+  top: auto;
+  bottom: calc(100% + 4px);
 }
 
 /* подсказка после «#»: под полем ввода, свои метки плашками */

@@ -65,3 +65,18 @@ test('строки окна «Метки»: новые выбранные све
   assert.equal(pickerOptions(rows, '!!!').create, null);
   assert.deepEqual(pickerOptions([], '').list, []);
 });
+
+test('подсказка после «#»: первая выделена, если имя ещё не набрано целиком', async () => {
+  const { suggestActive } = await import('../js/picker.js');
+  assert.equal(suggestActive(suggestTags(rows, 'по'), 'по'), -1, 'нечего подсказывать: список пуст');
+  assert.equal(suggestActive(suggestTags(rows, 'д'), 'д'), 0);
+  assert.equal(suggestActive(suggestTags(rows, 'дом'), 'Дом'), -1, 'набрано целое имя: Enter добавляет задачу');
+  assert.equal(suggestActive([], ''), -1);
+});
+
+test('метки поля ввода: набранные и выбранные вместе, без повторов, не больше пяти', async () => {
+  const { mergeTags } = await import('../js/picker.js');
+  assert.deepEqual(mergeTags(['дом'], ['работа', 'Дом']), ['дом', 'работа']);
+  assert.deepEqual(mergeTags([], ['a', 'b', 'c', 'd', 'e', 'f']), ['a', 'b', 'c', 'd', 'e']);
+  assert.deepEqual(mergeTags(undefined, undefined), []);
+});

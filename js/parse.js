@@ -272,3 +272,22 @@ export function normalizeTags(list) {
 export function splitTags(text) {
   return normalizeTags(String(text ?? '').split(/[\s,;]+/));
 }
+
+// Метки из текста, даже когда названия ещё нет (в поле одни «#метки»): для плашек под полем
+// и окна «Метки». ignore: снятые крестиком слова, как у parseQuickAdd. Не больше MAX_TAGS.
+export function tagsIn(input, { ignore = [] } = {}) {
+  const skip = new Set(ignore.map((w) => w.toLowerCase()));
+  const text = String(input ?? '').replace(/[\u00a0\u202f]/g, ' ');
+  const out = [];
+  for (const m of text.matchAll(TAG_RE)) {
+    if (skip.has(m[0].toLowerCase()) || out.some((x) => x.toLowerCase() === m[1].toLowerCase())) continue;
+    if (out.length >= MAX_TAGS) break;
+    out.push(m[1]);
+  }
+  return out;
+}
+
+// Текст без «#меток»: пусто, значит, названия у задачи нет.
+export function stripTags(input) {
+  return String(input ?? '').replace(TAG_RE, ' ').replace(/\s+/g, ' ').trim();
+}

@@ -9,8 +9,8 @@ import {
   loadTodos, loadTodosReport, saveTodos, loadSettings, saveSettings, exportJSON, importJSON, storageAvailable, isFirstVisit,
   STORAGE_KEY, SETTINGS_KEY,
 } from './storage.js';
-import { parseQuickAdd, splitTags, MAX_TAGS } from './parse.js';
-import { tagAtCaret, suggestTags, completeTag, addTagText, removeTagText, pickerOptions } from './picker.js';
+import { parseQuickAdd, splitTags, MAX_TAGS, tagsIn, stripTags } from './parse.js';
+import { tagAtCaret, suggestTags, completeTag, removeTagText, pickerOptions, suggestActive, mergeTags } from './picker.js';
 import { todayKey, toKey, fromKey, addDays, nextMonday, daysBetween } from './dates.js';
 import { createI18n, detectLang } from './i18n.js';
 import { sampleTodos, translateSamples } from './samples.js';
@@ -1643,21 +1643,19 @@ function chipText(token, today, parsed) {
 function updateChips() {
   const today = todayKey();
   const parsed = currentParse();
-  const { tokens } = parsed;
-  // цвет новой метки такой, какой она получит после «Добавить», и у двух новых меток он разный
-  const tagValues = tokens.filter((token) => token.type === 'tag').map((token) => token.value);
-  const preview = new Map((tagValues.length ? previewTags(settings.tagMeta, todos, { tags: tagValues }) : []).map((p) => [tagKey(p.tag), p]));
-  const lookOf = (tag) => preview.get(tagKey(tag)) ?? metaOf(tag);
-  const tagMetas = tokens.filter((token) => token.type === 'tag').map((token) => lookOf(token.value));
-  const key = JSON.stringify([settings.lang, tokens, parsed.due, tagMetas]);
+  // метки отдельно от остальных слов: набранные «#словом» видны и без названия, выбранные в окне
+  // «Метки» стоят только плашкой. Цвет новой метки тот, что она получит после «Добавить»
+  const tokens = parsed.tokens.filter((token) => token.type !== 'tag');
+  const tags = addTags();
+  const looks = tags.length ? previewTags(settings.tagMeta, todos, { tags }) : [];
+  const key = JSON.stringify([settings.lang, tokens, parsed.due, looks]);
   if (key === lastChips) return;
   lastChips = key;
   chips.replaceChildren(...tokens.map((token) => {
     const chip = document.createElement('span');
     chip.className = 'chip';
-    let icon = { date: 'calendar', priority: 'flag', tag: 'hash', repeat: 'repeat' }[token.type];
+    const icon = { date: 'calendar', priority: 'flag', repeat: 'repeat' }[token.type];
     if (token.type === 'priority') chip.classList.add(`p${token.value}`);
-    if (token.type === 'tag') return tagChip(token.value, lookOf(token.value));
     const text = document.createElement('span');
     text.textContent = chipText(token, today, parsed);
     const remove = document.createElement('button');
@@ -1669,7 +1667,23 @@ function updateChips() {
     remove.append(svgIcon('x'));
     chip.append(svgIcon(icon), text, remove);
     return chip;
-  }));
+  }), ...looks.map((look) => tagChip(look.tag, look)));
+}
+
+// Метки новой задачи: набранные «#словом» (и без названия) и выбранные в окне «Метки».
+let pickedTags = [];
+function typedTags() {
+  return tagsIn(input.value, { ignore: ignoreTokens });
+}
+function addTags() {
+  return mergeTags(typedTags(), pickedTags);
+}
+
+// Убрать метку новой задачи: из выбранных в окне и из текста, если она там набрана.
+function dropAddTag(tag) {
+  pickedTags = pickedTags.filter((x) => tagKey(x) !== tagKey(tag));
+  if (typedTags().some((x) => tagKey(x) === tagKey(tag))) replaceAddText(removeTagText(input.value, tag));
+  else updateChips();
 }
 
 function renderHint() {
@@ -1724,18 +1738,30 @@ chips.addEventListener('click', (e) => {
   const btn = e.target.closest('.chip-remove');
   if (!btn) return;
   // метка убирается из текста целиком; остальное (срок, приоритет) остаётся словами названия
+  input.focus();
   if (btn.dataset.tag) {
-    setAddText(removeTagText(input.value, btn.dataset.tag));
+    dropAddTag(btn.dataset.tag);
     announce(t('picker.removed', { tag: `#${btn.dataset.tag}` }));
   } else {
     ignoreTokens.push(btn.dataset.token);
     updateChips();
   }
-  input.focus();
+  // после крестика подсказка не всплывает: человек ничего не набирал
+  hideSuggest();
 });
 
 // Текст поля ввода поменяли не клавиатурой (окно «Метки», подсказка, крестик метки):
 // всё, что зависит от набранного, обновляется так же, как при вводе.
+// Заменить текст поля так, чтобы Ctrl+Z в поле его вернул (insertText идёт в историю правки).
+// Фокус не в поле (окно «Метки» открыто): просто ставим значение.
+function replaceAddText(text, from = 0, to = input.value.length) {
+  if (document.activeElement === input) {
+    input.setSelectionRange(from, to);
+    if (document.execCommand('insertText', false, text.slice(from, text.length - (input.value.length - to)))) return;
+  }
+  setAddText(text);
+}
+
 function setAddText(text, caret = text.length, added = null) {
   input.value = text;
   // метку, которую выбрали снова, распознаём, даже если раньше её крестиком сделали словом
@@ -1766,7 +1792,8 @@ function updateSuggest() {
   const items = suggestTags(currentTagStats(), at.prefix, chosen);
   if (!items.length) return hideSuggest();
   const keep = sugg && sugg.active >= 0 ? items.findIndex((row) => row.key === sugg.items[sugg.active]?.key) : -1;
-  sugg = { at, items, active: keep };
+  // первая подсказка выделена сразу (Enter её и допишет), если имя ещё не набрано целиком
+  sugg = { at, items, active: keep >= 0 ? keep : suggestActive(items, at.prefix) };
   suggest.replaceChildren(...items.map((row, i) => {
     const li = document.createElement('li');
     li.id = `tag-sug-${i}`;
@@ -1779,7 +1806,21 @@ function updateSuggest() {
   }));
   suggest.hidden = false;
   input.setAttribute('aria-expanded', 'true');
+  placeSuggest();
   markSuggest();
+}
+
+// Список под полем, а мало места снизу (повёрнутый телефон, масштаб 400%): над полем,
+// где места больше; высота по месту, лишнее листается внутри.
+function placeSuggest() {
+  suggest.classList.remove('is-above');
+  suggest.style.maxHeight = '';
+  const r = form.getBoundingClientRect();
+  const below = innerHeight - r.bottom - 12;
+  const above = r.top - 12;
+  const up = below < Math.min(suggest.scrollHeight, 160) && above > below;
+  suggest.classList.toggle('is-above', up);
+  suggest.style.maxHeight = `${Math.max(48, Math.min(240, up ? above : below))}px`;
 }
 
 function markSuggest() {
@@ -1793,9 +1834,18 @@ function markSuggest() {
 function pickSuggest(index) {
   const row = sugg?.items[index];
   if (!row) return;
-  const done = completeTag(input.value, sugg.at, row.tag);
+  const { at } = sugg;
+  const done = completeTag(input.value, at, row.tag);
   hideSuggest();
-  setAddText(done.text, done.caret, row.tag);
+  ignoreTokens = ignoreTokens.filter((token) => tagKey(token.replace(/^#+/, '')) !== tagKey(row.tag));
+  // через insertText: Ctrl+Z в поле возвращает набранное «#по»
+  const end = at.start + 1 + at.prefix.length;
+  input.setSelectionRange(at.start, end);
+  const insert = done.text.slice(at.start, done.text.length - (input.value.length - end));
+  if (document.execCommand('insertText', false, insert)) input.setSelectionRange(done.caret, done.caret);
+  else setAddText(done.text, done.caret, row.tag);
+  // курсор уже за меткой и пробелом: подсказка закрыта (insertText мог открыть её на полпути)
+  hideSuggest();
 }
 
 // Плашка метки без кнопок (подсказка и окно «Метки»)
@@ -1830,7 +1880,8 @@ input.addEventListener('keydown', (e) => {
   }
 });
 
-input.addEventListener('input', updateSuggest);
+// подсказка открывается от набора, а не когда текст поменяли окно «Метки» или крестик
+input.addEventListener('input', (e) => (e.inputType ? updateSuggest() : hideSuggest()));
 input.addEventListener('click', updateSuggest);
 input.addEventListener('keyup', (e) => {
   if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) updateSuggest();
@@ -1870,7 +1921,7 @@ function chosenTags() {
     const editor = pickEditor();
     return editor ? splitTags(editor.elements.tags.value) : [];
   }
-  return currentParse().tags;
+  return addTags();
 }
 
 function setChosen(tag, on) {
@@ -1879,9 +1930,13 @@ function setChosen(tag, on) {
     if (!editor) return;
     const list = splitTags(editor.elements.tags.value).filter((x) => tagKey(x) !== tagKey(tag));
     setEditorTags(editor, on ? [...list, tag] : list);
+  } else if (on) {
+    // в текст не пишем: метка стоит плашкой под полем и в название не попадёт
+    if (!addTags().some((x) => tagKey(x) === tagKey(tag))) pickedTags = [...pickedTags, tag];
+    clearInputError();
+    updateChips();
   } else {
-    const text = on ? addTagText(removeTagText(input.value, tag), tag) : removeTagText(input.value, tag);
-    setAddText(text, text.length, on ? tag : null);
+    dropAddTag(tag);
   }
 }
 
@@ -1900,6 +1955,7 @@ function renderPicker() {
   const items = list.map((option) => ({ ...option, on: keys.has(option.key) }));
   if (create && !full) items.push({ tag: create, key: tagKey(create), create: true });
   pick.items = items;
+  pick.sig = items.map((option) => (option.create ? `+${option.key}` : option.key)).join('|');
   if (pick.active >= items.length) pick.active = items.length - 1;
   if (pick.active < 0 && pickerQ.value.trim() && items.length) pick.active = 0;
   pickerList.replaceChildren(...items.map((option, i) => {
@@ -1927,6 +1983,32 @@ function renderPicker() {
   markPicker();
 }
 
+// Выбор или снятие метки: строки те же, меняются только отметки. Строки не пересоздаются,
+// поэтому клик мышью или касание не теряют свою цель (и фокус не уходит в никуда).
+function refreshPicker() {
+  const chosen = chosenTags();
+  const keys = new Set(chosen.map(tagKey));
+  const full = chosen.length >= MAX_TAGS;
+  const { list, create } = pickerOptions(currentTagStats(), pickerQ.value, chosen);
+  const sig = [...list.map((option) => option.key), ...(create && !full ? [`+${tagKey(create)}`] : [])].join('|');
+  if (sig !== pick.sig) {
+    renderPicker();
+    return;
+  }
+  for (const li of pickerList.children) {
+    const option = pick.items[Number(li.dataset.index)];
+    if (option.create) continue;
+    option.on = keys.has(option.key);
+    li.setAttribute('aria-selected', String(option.on));
+    if (full && !option.on) li.setAttribute('aria-disabled', 'true');
+    else li.removeAttribute('aria-disabled');
+  }
+  const note = full ? t('picker.max', { n: MAX_TAGS }) : '';
+  pickerNote.textContent = note;
+  pickerNote.hidden = !note;
+  markPicker();
+}
+
 function markPicker() {
   for (const li of pickerList.children) li.classList.toggle('is-active', Number(li.dataset.index) === pick.active);
   if (pick.active >= 0 && pickerList.children[pick.active]) {
@@ -1949,7 +2031,14 @@ function choosePicked(index) {
   }
   setChosen(option.tag, !option.on);
   announce(t(option.on ? 'picker.removed' : 'picker.added', { tag: `#${option.tag}` }));
-  renderPicker();
+  // после выбора поиск очищается: следующий Enter работает со следующим запросом
+  if (pickerQ.value) {
+    pickerQ.value = '';
+    pick.active = -1;
+    renderPicker();
+  } else {
+    refreshPicker();
+  }
 }
 
 // Новая метка из окна: сразу со своим цветом (тем, что она получила бы и так) и значком по слову,
@@ -1995,7 +2084,7 @@ function changeCreated(patch, focusSel) {
     saveSettings(settings);
     if (pick.ctx === 'editor') renderEditorTags(pickEditor());
     else updateChips();
-    renderPicker();
+    refreshPicker();
   }
   syncPickerNew();
   $(focusSel, pickerNew)?.focus();
@@ -2056,6 +2145,7 @@ function closePicker(returnFocus) {
 tagPickBtn.addEventListener('click', () => openPicker('add', tagPickBtn));
 
 pickerQ.addEventListener('input', () => {
+  if (!pick) return;
   pick.active = -1;
   renderPicker();
 });
@@ -2123,7 +2213,10 @@ picker.addEventListener('keydown', (e) => {
 });
 
 document.addEventListener('click', (e) => {
-  if (!pick || e.target.closest('#tag-picker') || e.target.closest('#tag-pick-btn, .tag-add')) return;
+  if (!pick) return;
+  // путь события, а не closest: цель могла уже уйти из документа после перерисовки
+  const path = e.composedPath();
+  if (!e.target.isConnected || path.includes(picker) || path.some((el) => el === tagPickBtn || el.classList?.contains('tag-add'))) return;
   closePicker(false);
 });
 
@@ -2169,7 +2262,8 @@ input.addEventListener('paste', (e) => {
 form.addEventListener('submit', (e) => {
   e.preventDefault();
   const parsed = currentParse();
-  if (!parsed.title) {
+  // в поле одни метки: названия нет, как и в пустом поле
+  if (!parsed.title || !stripTags(input.value)) {
     input.value = '';
     input.setAttribute('aria-invalid', 'true');
     hint.classList.add('is-error');
@@ -2190,6 +2284,10 @@ form.addEventListener('submit', (e) => {
   form.reset();
   ignoreTokens = [];
   hintNote = null;
+  // метки из окна «Метки» (в тексте их нет) вместе с набранными
+  parsed.tags = mergeTags(parsed.tags, pickedTags);
+  pickedTags = [];
+  hideSuggest();
   // длиннее 200 символов: продолжение уходит в заметку, а не пропадает молча
   const { title, rest } = splitLongTitle(parsed.title);
   const next = addTodo(todos, { ...parsed, title, notes: rest });
@@ -2677,7 +2775,9 @@ listWrap.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     e.preventDefault();
     e.stopPropagation();
-    finishEditing(false);
+    // открыто окно «Метки»: первый Esc закрывает только его
+    if (pick) closePicker(true);
+    else finishEditing(false);
     return;
   }
   if (e.key !== 'Enter' || e.isComposing) return;
@@ -3678,6 +3778,8 @@ document.addEventListener('keydown', (e) => {
   }
 
   if (target.matches?.(TEXT_INPUT)) return;
+  // в окнах «Метки», «Цвет и значок» и «Оформление» буквы и цифры не переключают разделы
+  if (target.closest?.('#tag-picker, #tag-panel, .look-panel')) return;
 
   if ((e.ctrlKey || e.metaKey) && !e.altKey && e.code === 'KeyZ' && undo?.snapshot) {
     e.preventDefault();
