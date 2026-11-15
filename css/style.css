@@ -1968,9 +1968,10 @@ h1 .title-icon {
   gap: 4px;
 }
 
+/* «#» и 28 значков: ряды по 6, в последнем 5 (по 7 последний значок оставался один) */
 .tag-icons {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(36px, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 4px;
 }
 
@@ -2020,7 +2021,7 @@ h1 .title-icon {
 
 @media (pointer: coarse) {
   .tag-colors { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  .tag-icons { grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); }
+  .tag-icons { grid-template-columns: repeat(6, minmax(44px, 1fr)); gap: 2px; }
   .tag-color, .tag-icon { height: 44px; }
   .tag-more { width: 44px; height: 44px; }
 }
@@ -2098,6 +2099,18 @@ h1 .title-icon {
 .suggest-opt[aria-selected="true"] {
   background: var(--hover);
   box-shadow: inset 0 0 0 2px var(--focus);
+}
+
+/* выбрали мышью или пальцем: строка без кольца, выбор и так виден галочкой */
+.tag-picker.is-pointer .picker-opt.is-active {
+  background: transparent;
+  box-shadow: none;
+}
+
+@media (hover: hover) {
+  .tag-picker.is-pointer .picker-opt.is-active:hover {
+    background: var(--hover);
+  }
 }
 
 .picker-check {

@@ -2003,9 +2003,16 @@ function refreshPicker() {
     renderPicker();
     return;
   }
+  const looks = pickerLooks(chosen);
   for (const li of pickerList.children) {
     const option = pick.items[Number(li.dataset.index)];
     if (option.create) continue;
+    // цвет и значок могли смениться (новая метка в сетках ниже): плашка меняется на месте, строка та же
+    const look = looks.get(option.key) ?? metaOf(option.tag);
+    const plate = $('.meta-tag', li);
+    const fresh = tagPlate(option.tag, look);
+    const sign = (el) => `${el?.className}|${el?.querySelector('use')?.getAttribute('href') ?? ''}|${el?.textContent}`;
+    if (plate && sign(plate) !== sign(fresh)) plate.replaceWith(fresh);
     option.on = keys.has(option.key);
     li.setAttribute('aria-selected', String(option.on));
     if (full && !option.on) li.setAttribute('aria-disabled', 'true');
@@ -2109,11 +2116,27 @@ function placePicker() {
   picker.style.maxHeight = 'none';
   const full = picker.offsetHeight;
   const left = phone ? 12 : Math.max(12, Math.min(r.left, innerWidth - w - 12));
+  // Сторона выбирается при открытии и дальше не меняется: окно, которое выросло (сетки новой
+  // метки), не прыгает на поле ввода, а листается внутри
+  // кнопка может быть за краем экрана (редактор длинный): считаем от видимой части
+  const anchorTop = Math.min(r.top, innerHeight);
+  const anchorBottom = Math.max(r.bottom, 0);
+  const below = innerHeight - 12 - (anchorBottom + 6);
+  const above = anchorTop - 6 - 12;
+  pick.side ??= full <= below ? 'below' : full <= above ? 'above' : below >= 200 ? 'below' : 'free';
   let top;
-  if (r.bottom + 6 + full <= innerHeight - 12) top = r.bottom + 6;
-  else if (r.top - 6 - full >= 12) top = r.top - 6 - full;
-  else top = Math.max(12, Math.min(r.bottom + 6, innerHeight - 12 - Math.min(full, innerHeight - 24)));
-  picker.style.maxHeight = `${innerHeight - top - 12}px`;
+  let max;
+  if (pick.side === 'below' && below >= 160) {
+    top = anchorBottom + 6;
+    max = below;
+  } else if (pick.side === 'above' && above >= 160) {
+    top = anchorTop - 6 - Math.min(full, above);
+    max = above;
+  } else {
+    top = Math.max(12, Math.min(r.bottom + 6, innerHeight - 12 - Math.min(full, innerHeight - 24)));
+    max = innerHeight - top - 12;
+  }
+  picker.style.maxHeight = `${max}px`;
   picker.style.left = `${left}px`;
   picker.style.top = `${top}px`;
 }
@@ -2129,7 +2152,8 @@ function openPicker(ctx, opener) {
   setDataPanel(false);
   setLook(false);
   hideSuggest();
-  pick = { ctx, opener, items: [], active: -1, created: null };
+  pick = { ctx, opener, items: [], active: -1, created: null, side: null };
+  picker.classList.remove('is-pointer');
   opener.setAttribute('aria-expanded', 'true');
   pickerQ.value = '';
   pickerNew.hidden = true;
@@ -2174,6 +2198,9 @@ pickerQ.addEventListener('keydown', (e) => {
 });
 
 pickerList.addEventListener('mousedown', (e) => e.preventDefault());
+// Кольцо на строке под стрелками только для клавиатуры: после клика или касания его нет
+picker.addEventListener('pointerdown', () => picker.classList.add('is-pointer'));
+picker.addEventListener('keydown', () => picker.classList.remove('is-pointer'), true);
 pickerList.addEventListener('click', (e) => {
   const li = e.target.closest('.picker-opt');
   if (li) choosePicked(Number(li.dataset.index));
